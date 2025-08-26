@@ -1,0 +1,435 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import Navigation from "@/components/navigation"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { api } from "@/lib/api"
+import { useRouter } from "next/navigation"
+import { ArrowLeft, Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+
+interface Transaction {
+  id: string
+  type: 'received' | 'withdrawn' | 'transfer'
+  amountUSD: number
+  amountNGN: number
+  description: string
+  status: 'pending' | 'completed' | 'failed' | 'cancelled'
+  createdAt: string
+  updatedAt: string
+  reference?: string
+  bankAccount?: {
+    bankName: string
+    accountNumber: string
+    accountName: string
+  }
+}
+
+interface TransactionSummary {
+  totalReceived: number
+  totalWithdrawn: number
+  totalTransfers: number
+  pendingAmount: number
+  completedAmount: number
+}
+
+export default function HistoryPage() {
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [summary, setSummary] = useState<TransactionSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [typeFilter, setTypeFilter] = useState("all")
+  const [dateFilter, setDateFilter] = useState("all")
+  const router = useRouter()
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('jwt')
+      if (!token) {
+        router.push('/login')
+        return
+      }
+
+      try {
+        // Get transaction history
+        const historyRes = await api.transaction.history(token)
+        setTransactions(historyRes.data)
+
+        // Get transaction summary
+        const summaryRes = await api.transaction.summary(token)
+        setSummary(summaryRes.data)
+      } catch (err: any) {
+        console.error('Failed to load transactions:', err)
+        setError('Failed to load transaction history')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    checkAuth()
+  }, [router])
+
+  const filteredTransactions = transactions.filter(transaction => {
+    const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         transaction.reference?.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesStatus = statusFilter === "all" || transaction.status === statusFilter
+    const matchesType = typeFilter === "all" || transaction.type === typeFilter
+    
+    let matchesDate = true
+    if (dateFilter !== "all") {
+      const transactionDate = new Date(transaction.createdAt)
+      const now = new Date()
+      const diffTime = Math.abs(now.getTime() - transactionDate.getTime())
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      
+      switch (dateFilter) {
+        case "today":
+          matchesDate = diffDays <= 1
+          break
+        case "week":
+          matchesDate = diffDays <= 7
+          break
+        case "month":
+          matchesDate = diffDays <= 30
+          break
+      }
+    }
+
+    return matchesSearch && matchesStatus && matchesType && matchesDate
+  })
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="h-4 w-4 text-green-600" />
+      case 'failed':
+        return <XCircle className="h-4 w-4 text-red-600" />
+      case 'pending':
+        return <Clock className="h-4 w-4 text-yellow-600" />
+      case 'cancelled':
+        return <XCircle className="h-4 w-4 text-gray-600" />
+      default:
+        return <AlertCircle className="h-4 w-4 text-blue-600" />
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'text-green-600'
+      case 'failed':
+        return 'text-red-600'
+      case 'pending':
+        return 'text-yellow-600'
+      case 'cancelled':
+        return 'text-gray-600'
+      default:
+        return 'text-blue-600'
+    }
+  }
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'received':
+        return <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+          <span className="text-green-600 font-bold text-sm">+</span>
+        </div>
+      case 'withdrawn':
+        return <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+          <span className="text-red-600 font-bold text-sm">-</span>
+        </div>
+      default:
+        return <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+          <span className="text-blue-600 font-bold text-sm">→</span>
+        </div>
+    }
+  }
+
+  const formatCurrency = (amount: number, currency: string) => {
+    if (currency === "NGN") {
+      return `₦${amount.toLocaleString()}`
+    }
+    return `$${amount.toLocaleString()}`
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffTime = Math.abs(now.getTime() - date.getTime())
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    
+    if (diffDays === 1) return "Today"
+    if (diffDays === 2) return "Yesterday"
+    if (diffDays <= 7) return `${diffDays - 1} days ago`
+    if (diffDays <= 30) return `${Math.floor(diffDays / 7)} weeks ago`
+    return date.toLocaleDateString()
+  }
+
+  const handleExport = () => {
+    // Export functionality would go here
+    console.log('Exporting transactions...')
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Loading transactions...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-500">{error}</p>
+          <Button onClick={() => window.location.reload()} className="mt-4">
+            Retry
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Navigation />
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">Transaction History</h1>
+            <p className="text-muted-foreground">
+              View all your transaction history and activity
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => router.push('/dashboard')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
+        </div>
+
+        {/* Summary Cards */}
+        {summary && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Received</CardTitle>
+                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                  <span className="text-green-600 font-bold text-sm">+</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">${summary.totalReceived.toFixed(2)}</div>
+                <p className="text-xs text-muted-foreground">
+                  ₦{(summary.totalReceived * 1000).toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Withdrawn</CardTitle>
+                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                  <span className="text-red-600 font-bold text-sm">-</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">${summary.totalWithdrawn.toFixed(2)}</div>
+                <p className="text-xs text-muted-foreground">
+                  ₦{(summary.totalWithdrawn * 1000).toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Pending</CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">${summary.pendingAmount.toFixed(2)}</div>
+                <p className="text-xs text-muted-foreground">
+                  ₦{(summary.pendingAmount * 1000).toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Completed</CardTitle>
+                <CheckCircle className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">${summary.completedAmount.toFixed(2)}</div>
+                <p className="text-xs text-muted-foreground">
+                  ₦{(summary.completedAmount * 1000).toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Filters and Search */}
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="search">Search</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="search"
+                    placeholder="Search transactions..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="status">Status</Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="type">Type</Label>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="received">Received</SelectItem>
+                    <SelectItem value="withdrawn">Withdrawn</SelectItem>
+                    <SelectItem value="transfer">Transfer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="date">Date Range</Label>
+                <Select value={dateFilter} onValueChange={setDateFilter}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>&nbsp;</Label>
+                <Button onClick={handleExport} variant="outline" className="w-full">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Transactions List */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Transactions</CardTitle>
+            <CardDescription>
+              {filteredTransactions.length} of {transactions.length} transactions
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {filteredTransactions.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Search className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-medium mb-2">No transactions found</h3>
+                <p className="text-muted-foreground">
+                  Try adjusting your search or filter criteria
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredTransactions.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className="flex items-center space-x-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    {getTypeIcon(transaction.type)}
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium truncate">{transaction.description}</p>
+                          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                            <span>{formatDate(transaction.createdAt)}</span>
+                            {transaction.reference && (
+                              <>
+                                <span>•</span>
+                                <span className="font-mono">{transaction.reference}</span>
+                              </>
+                            )}
+                          </div>
+                          {transaction.bankAccount && (
+                            <p className="text-sm text-muted-foreground">
+                              {transaction.bankAccount.bankName} - {transaction.bankAccount.accountName}
+                            </p>
+                          )}
+                        </div>
+                        
+                        <div className="text-right">
+                          <div className="flex items-center space-x-2">
+                            <div className="text-right">
+                              <p className="font-medium">
+                                {transaction.type === 'withdrawn' ? '-' : '+'}
+                                {formatCurrency(transaction.amountUSD, 'USD')}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {formatCurrency(transaction.amountNGN, 'NGN')}
+                              </p>
+                            </div>
+                            {getStatusIcon(transaction.status)}
+                          </div>
+                          <p className={`text-sm font-medium capitalize ${getStatusColor(transaction.status)}`}>
+                            {transaction.status}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button variant="ghost" size="sm">
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
