@@ -12,19 +12,23 @@ const router = Router();
  */
 router.get('/profile', authenticateToken, async (req: Request, res: Response) => {
   try {
-    const user = req.user;
+    const userId = req.user._id;
+    const freshUser = await User.findById(userId).lean();
+    if (!freshUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
 
     res.json({
       success: true,
       message: 'Profile retrieved successfully',
       user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        cavosWalletAddress: user.cavosWalletAddress,
-        balanceUSD: user.balanceUSD,
-        balanceNGN: user.balanceNGN,
-        bankDetails: user.bankDetails
+        id: freshUser._id,
+        email: freshUser.email,
+        name: freshUser.name,
+        cavosWalletAddress: freshUser.cavosWalletAddress,
+        balanceUSD: freshUser.balanceUSD,
+        balanceNGN: freshUser.balanceNGN,
+        bankDetails: freshUser.bankDetails
       }
     });
 
@@ -35,6 +39,43 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
       message: 'Failed to retrieve profile',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
+  }
+});
+
+/**
+ * POST /api/user/wallet-sync
+ * Set user's cavosWalletAddress if currently not set
+ */
+router.post('/wallet-sync', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { walletAddress } = req.body as { walletAddress?: string };
+    if (!walletAddress || typeof walletAddress !== 'string' || walletAddress.trim() === '') {
+      return res.status(400).json({ success: false, message: 'walletAddress is required' });
+    }
+
+    const user = req.user;
+    // Only update if not already set
+    if (!user.cavosWalletAddress) {
+      user.cavosWalletAddress = walletAddress;
+      await user.save();
+    }
+
+    res.json({
+      success: true,
+      message: 'Wallet synced',
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        cavosWalletAddress: user.cavosWalletAddress,
+        balanceUSD: user.balanceUSD,
+        balanceNGN: user.balanceNGN,
+        bankDetails: user.bankDetails
+      }
+    });
+  } catch (error: any) {
+    console.error('Wallet sync error:', error);
+    res.status(500).json({ success: false, message: 'Failed to sync wallet' });
   }
 });
 

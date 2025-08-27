@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { api } from "@/lib/api"
 import { useRouter } from "next/navigation"
 import { ArrowLeft, Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { cookies } from "@/lib/cookies"
 
 interface Transaction {
   id: string
@@ -49,7 +50,7 @@ export default function HistoryPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('jwt')
+      const token = cookies.get('jwt')
       if (!token) {
         router.push('/login')
         return
@@ -64,7 +65,6 @@ export default function HistoryPage() {
         const summaryRes = await api.transaction.summary(token)
         setSummary(summaryRes.data)
       } catch (err: any) {
-        console.error('Failed to load transactions:', err)
         setError('Failed to load transaction history')
       } finally {
         setLoading(false)
@@ -172,7 +172,6 @@ export default function HistoryPage() {
 
   const handleExport = () => {
     // Export functionality would go here
-    console.log('Exporting transactions...')
   }
 
   if (loading) {

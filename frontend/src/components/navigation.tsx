@@ -43,18 +43,20 @@ export default function Navigation() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center space-x-2">
-            <SiZebpay className="h-8 w-8 text-primary" />
-            <span className="text-xl font-bold">SendPay</span>
+          <div className="flex items-center space-x-2 min-w-0 flex-shrink-0">
+            <Link href="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
+              <SiZebpay className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+              <span className="text-lg sm:text-xl font-bold truncate">SendPay</span>
+            </Link>
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-6">
+          <div className="hidden md:flex items-center space-x-6 flex-shrink-0">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`text-sm font-medium transition-colors hover:text-primary ${
+                className={`text-sm font-medium transition-colors hover:text-primary whitespace-nowrap ${
                   isActive(item.href)
                     ? "text-primary"
                     : "text-muted-foreground"
@@ -66,13 +68,13 @@ export default function Navigation() {
           </div>
 
           {/* Right side - Theme toggle and mobile menu */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
             {/* Theme Toggle */}
             <Button
               variant="ghost"
               size="sm"
               onClick={toggleTheme}
-              className="h-9 w-9 px-0"
+              className="h-8 w-8 sm:h-9 sm:w-9 px-0"
             >
               <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
@@ -83,7 +85,7 @@ export default function Navigation() {
             <Button
               variant="ghost"
               size="sm"
-              className="md:hidden h-9 w-9 px-0"
+              className="md:hidden h-8 w-8 px-0"
               onClick={() => setIsMenuOpen(!isMenuOpen)}
             >
               {isMenuOpen ? (

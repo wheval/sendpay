@@ -77,11 +77,11 @@ export default function ReceivePage() {
   const handleCopyLink = async () => {
     if (paymentRequest) {
       const link = `${window.location.origin}/pay/${paymentRequest.reference}`
-      try {
+    try {
         await navigator.clipboard.writeText(link)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      } catch (err) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
         console.error('Failed to copy:', err)
       }
     }
@@ -205,7 +205,7 @@ export default function ReceivePage() {
                       <p className="text-sm text-muted-foreground mt-1">
                         {new Date(paymentRequest.createdAt).toLocaleDateString()}
                       </p>
-                    </div>
+                </div>
                     <div>
                       <Label className="text-sm font-medium">Expires</Label>
                       <p className="text-sm text-muted-foreground mt-1">
@@ -254,13 +254,13 @@ export default function ReceivePage() {
             </p>
           </div>
 
-          <Card>
-            <CardHeader>
+            <Card>
+              <CardHeader>
               <CardTitle>Create Payment Request</CardTitle>
-              <CardDescription>
+                <CardDescription>
                 Set the amount and description for your payment request
-              </CardDescription>
-            </CardHeader>
+                </CardDescription>
+              </CardHeader>
             <CardContent>
               {error && (
                 <div className="text-red-500 text-sm text-center mb-4">{error}</div>
@@ -268,9 +268,9 @@ export default function ReceivePage() {
 
               <form onSubmit={handleCreateRequest} className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="space-y-2">
                     <Label htmlFor="amount">Amount</Label>
-                    <Input
+                    <Input 
                       id="amount"
                       type="number"
                       step="0.01"
@@ -294,10 +294,10 @@ export default function ReceivePage() {
                     </Select>
                   </div>
                 </div>
-
+                
                 <div className="space-y-2">
                   <Label htmlFor="description">Description (Optional)</Label>
-                  <Input
+                    <Input 
                     id="description"
                     placeholder="What is this payment for?"
                     value={description}
@@ -309,22 +309,22 @@ export default function ReceivePage() {
                   <div className="flex items-center space-x-2 mb-2">
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium">Estimated Conversion</span>
-                  </div>
+                </div>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-muted-foreground">USD:</span>
                       <span className="ml-2 font-medium">
                         ${amount ? parseFloat(amount).toFixed(2) : '0.00'}
                       </span>
-                    </div>
+          </div>
                     <div>
                       <span className="text-muted-foreground">NGN:</span>
                       <span className="ml-2 font-medium">
                         ₦{amount ? (parseFloat(amount) * 1000).toLocaleString() : '0'}
                       </span>
-                    </div>
                   </div>
                 </div>
+              </div>
 
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? "Creating Request..." : "Create Payment Request"}

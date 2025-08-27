@@ -232,9 +232,9 @@ export default function WithdrawPage() {
                 <div>
                   <Label className="text-sm font-medium">Bank Account</Label>
                   <div className="bg-muted p-3 rounded-lg mt-2">
-                    <p className="font-medium">{withdrawalRequest.bankAccount.bankName}</p>
+                    <p className="font-medium">{withdrawalRequest?.bankAccount?.bankName}</p>
                     <p className="text-sm text-muted-foreground">
-                      {withdrawalRequest.bankAccount.accountName} - {withdrawalRequest.bankAccount.accountNumber}
+                      {withdrawalRequest?.bankAccount?.accountName} - {withdrawalRequest?.bankAccount?.accountNumber}
                     </p>
                   </div>
                 </div>
@@ -303,13 +303,13 @@ export default function WithdrawPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-              <Card>
-                <CardHeader>
+            <Card>
+              <CardHeader>
                   <CardTitle>Withdrawal Details</CardTitle>
-                  <CardDescription>
+                <CardDescription>
                     Enter the amount you want to withdraw and select your bank account
-                  </CardDescription>
-                </CardHeader>
+                </CardDescription>
+              </CardHeader>
                 <CardContent>
                   {error && (
                     <div className="text-red-500 text-sm text-center mb-4">{error}</div>
@@ -317,23 +317,23 @@ export default function WithdrawPage() {
 
                   <form onSubmit={handleWithdraw} className="space-y-6">
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
+                <div className="space-y-2">
                         <Label htmlFor="amount">Amount</Label>
-                        <Input
-                          id="amount"
-                          type="number"
+                  <Input
+                    id="amount"
+                    type="number"
                           step="0.01"
                           min="0.01"
                           placeholder="0.00"
-                          value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
                           required
                           className={getFieldError('amount') ? 'border-red-500' : ''}
                         />
                         {getFieldError('amount') && (
                           <p className="text-red-500 text-xs">{getFieldError('amount')}</p>
-                        )}
-                      </div>
+                  )}
+                </div>
                       <div className="space-y-2">
                         <Label htmlFor="currency">Currency</Label>
                         <Select value={currency} onValueChange={setCurrency}>
@@ -345,24 +345,24 @@ export default function WithdrawPage() {
                             <SelectItem value="NGN">NGN</SelectItem>
                           </SelectContent>
                         </Select>
-                      </div>
-                    </div>
+                  </div>
+                </div>
 
-                    <div className="space-y-2">
+                <div className="space-y-2">
                       <Label htmlFor="bankAccount">Bank Account</Label>
-                      {bankAccounts.length > 0 ? (
+                      {bankAccounts?.length > 0 ? (
                         <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
                           <SelectTrigger className={getFieldError('bankAccountId') ? 'border-red-500' : ''}>
                             <SelectValue placeholder="Select bank account" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {bankAccounts.map((account) => (
+                    </SelectTrigger>
+                    <SelectContent>
+                            {bankAccounts?.map((account) => (
                               <SelectItem key={account.id} value={account.id}>
                                 {account.bankName} - {account.accountName} ({account.accountNumber})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                       ) : (
                         <div className="text-center py-8 border-2 border-dashed border-muted-foreground rounded-lg">
                           <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -378,7 +378,7 @@ export default function WithdrawPage() {
                       {getFieldError('bankAccountId') && (
                         <p className="text-red-500 text-xs">{getFieldError('bankAccountId')}</p>
                       )}
-                    </div>
+                </div>
 
                     <div className="bg-muted p-4 rounded-lg">
                       <div className="flex items-center space-x-2 mb-2">
@@ -389,31 +389,31 @@ export default function WithdrawPage() {
                         <div>
                           <span className="text-muted-foreground">USD:</span>
                           <span className="ml-2 font-medium">
-                            ${balance.usd.toFixed(2)}
+                            ${balance?.usd?.toFixed(2)}
                           </span>
-                        </div>
+                      </div>
                         <div>
                           <span className="text-muted-foreground">NGN:</span>
                           <span className="ml-2 font-medium">
-                            ₦{balance.ngn.toLocaleString()}
+                            ₦{balance?.ngn?.toLocaleString()}
                           </span>
-                        </div>
                       </div>
                     </div>
+                  </div>
 
-                    <Button type="submit" className="w-full" disabled={loading || bankAccounts.length === 0}>
+                    <Button type="submit" className="w-full" disabled={loading || bankAccounts?.length === 0}>
                       {loading ? "Processing..." : "Withdraw Funds"}
-                    </Button>
+                  </Button>
                   </form>
-                </CardContent>
-              </Card>
+              </CardContent>
+            </Card>
             </div>
 
             <div className="space-y-6">
-              <Card>
-                <CardHeader>
+            <Card>
+              <CardHeader>
                   <CardTitle>Withdrawal Info</CardTitle>
-                </CardHeader>
+              </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <h4 className="font-medium">Processing Time</h4>
@@ -425,16 +425,16 @@ export default function WithdrawPage() {
                     <h4 className="font-medium">Fees</h4>
                     <p className="text-sm text-muted-foreground">
                       No withdrawal fees for amounts above $10
-                    </p>
-                  </div>
+                      </p>
+                    </div>
                   <div className="space-y-2">
                     <h4 className="font-medium">Minimum Amount</h4>
                     <p className="text-sm text-muted-foreground">
                       $10 USD or ₦10,000 NGN
                     </p>
-                  </div>
-                </CardContent>
-              </Card>
+                </div>
+              </CardContent>
+            </Card>
 
               <Card>
                 <CardHeader>

@@ -1,9 +1,16 @@
 // Cookie utility functions
+const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:'
+
 export const cookies = {
   set: (name: string, value: string, days: number = 7) => {
-    const expires = new Date()
-    expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000)
-    document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;secure;samesite=strict`
+    if (value == null || value === '' || value === 'undefined') {
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
+      return
+    }
+    const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString()
+    const encoded = encodeURIComponent(value)
+    const secure = isHttps ? ';secure' : ''
+    document.cookie = `${name}=${encoded};expires=${expires};path=/;samesite=strict${secure}`
   },
 
   get: (name: string): string | null => {
@@ -12,7 +19,10 @@ export const cookies = {
     for (let i = 0; i < ca.length; i++) {
       let c = ca[i]
       while (c.charAt(0) === ' ') c = c.substring(1, c.length)
-      if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length)
+      if (c.indexOf(nameEQ) === 0) {
+        const raw = c.substring(nameEQ.length, c.length)
+        try { return decodeURIComponent(raw) } catch { return raw }
+      }
     }
     return null
   },

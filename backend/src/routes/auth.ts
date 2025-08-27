@@ -36,23 +36,16 @@ router.post('/login', async (req: Request, res: Response) => {
           message: `${provider} token is required`
         });
       }
-
-      // Simulate token verification
-      // In production: verify token with Google/Apple APIs
-      console.log(`Verifying ${provider} token:`, token);
     }
 
     // Find or create user
     let user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
-      // For MVP, create a mock user with a generated Cavos wallet
-      // In production, this would be handled by Cavos SDK
       const mockCavosWallet = `0x${Math.random().toString(16).substring(2, 34)}`;
-      
       user = new User({
         email: email.toLowerCase(),
-        name: email.split('@')[0], // Use email prefix as name
+        name: email.split('@')[0],
         cavosWalletAddress: mockCavosWallet,
         bankDetails: {
           bankName: 'Not Set',
@@ -64,10 +57,8 @@ router.post('/login', async (req: Request, res: Response) => {
       });
 
       await user.save();
-      console.log('✅ New user created with mock Cavos wallet');
     }
 
-    // Generate JWT token
     const jwtToken = generateToken(user._id?.toString() || '');
 
     res.json({
@@ -86,7 +77,6 @@ router.post('/login', async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error('Login error:', error);
     res.status(500).json({
       success: false,
       message: 'Login failed',
@@ -101,33 +91,35 @@ router.post('/login', async (req: Request, res: Response) => {
  */
 router.post('/onboarding', async (req: Request, res: Response) => {
   try {
-    const { email, name, bankDetails } = req.body;
-
-    if (!email || !name || !bankDetails) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email, name, and bank details are required'
-      });
+    if (!req.body || Object.keys(req.body).length === 0) {
+      return res.status(400).json({ success: false, message: 'Request body is empty' });
     }
 
+    const { email, name, phone, bankDetails } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+    if (!name) {
+      return res.status(400).json({ success: false, message: 'Name is required' });
+    }
+    if (!bankDetails) {
+      return res.status(400).json({ success: false, message: 'Bank details are required' });
+    }
+    if (!bankDetails.bankName || !bankDetails.accountNumber || !bankDetails.accountName) {
+      return res.status(400).json({ success: false, message: 'Bank name, account number, and account name are required' });
+    }
     if (!validateEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid email format'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid email format' });
     }
 
-    // Find user
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Update user with onboarding information
     user.name = name;
+    if (phone) user.phone = phone;
     user.bankDetails = {
       bankName: bankDetails.bankName,
       accountNumber: bankDetails.accountNumber,
@@ -136,7 +128,6 @@ router.post('/onboarding', async (req: Request, res: Response) => {
 
     await user.save();
 
-    // Generate new token
     const jwtToken = generateToken(user._id?.toString() || '');
 
     res.json({
@@ -155,7 +146,6 @@ router.post('/onboarding', async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error('Onboarding error:', error);
     res.status(500).json({
       success: false,
       message: 'Onboarding failed',
@@ -166,63 +156,21 @@ router.post('/onboarding', async (req: Request, res: Response) => {
 
 /**
  * GET /api/auth/profile
- * Get user profile (protected route)
  */
 router.get('/profile', async (req: Request, res: Response) => {
   try {
-    // This route would be protected by auth middleware in production
     const { email } = req.query;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is required'
-      });
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ success: false, message: 'Email is required' });
     }
-
-    const user = await User.findOne({ email: email.toString().toLowerCase() });
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
-
-    res.json({
-      success: true,
-      message: 'Profile retrieved successfully',
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        cavosWalletAddress: user.cavosWalletAddress,
-        balanceUSD: user.balanceUSD,
-        balanceNGN: user.balanceNGN,
-        bankDetails: user.bankDetails
-      }
-    });
-
+    res.json({ success: true, user });
   } catch (error: any) {
-    console.error('Profile retrieval error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve profile',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch profile' });
   }
-});
-
-/**
- * POST /api/auth/logout
- * Logout user (client-side token removal)
- */
-router.post('/logout', (req: Request, res: Response) => {
-  // In a stateless JWT system, logout is handled client-side
-  // by removing the token from storage
-  res.json({
-    success: true,
-    message: 'Logout successful'
-  });
 });
 
 export { router as authRoutes };

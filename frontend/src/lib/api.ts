@@ -1,13 +1,22 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3001/api';
 
 async function request(path: string, options: RequestInit = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const url = `${API_BASE}${path}`
+
+  const requestOptions: RequestInit = {
+    method: options.method || 'GET',
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {})
-    },
-    ...options,
-  });
+    }
+  }
+
+  if (options.body && (options.method === 'POST' || options.method === 'PUT')) {
+    requestOptions.body = options.body
+  }
+
+  const res = await fetch(url, requestOptions);
+
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `Request failed: ${res.status}`);
@@ -61,6 +70,12 @@ export const api = {
     bankAccounts: (token?: string) =>
       request('/user/bank-accounts', {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      }),
+    walletSync: (walletAddress: string, token?: string) =>
+      request('/user/wallet-sync', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: JSON.stringify({ walletAddress })
       })
   },
   

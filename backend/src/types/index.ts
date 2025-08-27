@@ -5,7 +5,9 @@ export interface IUser {
   _id?: string;
   email: string;
   name: string;
+  phone?: string;
   cavosWalletAddress: string;
+  starknetNetwork?: 'sepolia' | 'mainnet';
   bankDetails: {
     bankName: string;
     accountNumber: string;
@@ -125,7 +127,9 @@ export interface IBankAccount {
 export interface IUserDocument extends Document {
   email: string;
   name: string;
+  phone?: string;
   cavosWalletAddress: string;
+  starknetNetwork?: 'sepolia' | 'mainnet';
   bankDetails: {
     bankName: string;
     accountNumber: string;

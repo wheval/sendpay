@@ -15,11 +15,24 @@ const UserSchema = new Schema<IUserDocument>({
     required: true,
     trim: true
   },
+  phone: {
+    type: String,
+    required: false,
+    trim: true
+  },
   cavosWalletAddress: {
     type: String,
-    required: true,
+
+    required: false,
     unique: true,
+    sparse: true,
     trim: true
+  },
+  starknetNetwork: {
+    type: String,
+    enum: ['sepolia', 'mainnet'],
+    default: 'sepolia',
+    required: false
   },
   bankDetails: {
     bankName: {

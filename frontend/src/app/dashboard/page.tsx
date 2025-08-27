@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api"
 import { useRouter } from "next/navigation"
 import { Wallet, DollarSign, TrendingUp, History } from "lucide-react"
+import { cookies } from "@/lib/cookies"
 
 interface UserData {
   id: string
@@ -26,46 +27,70 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('jwt')
-      const userStr = localStorage.getItem('user')
-      
+      const token = cookies.get('jwt')
       if (!token) {
         router.push('/login')
         return
       }
 
-      if (userStr) {
-        try {
-          const user = JSON.parse(userStr)
-          setUserData(user)
-          
-          // Get balance from backend
-          if (user.cavosWalletAddress) {
+      try {
+        // Always fetch fresh profile first
+        const userRes = await api.user.profile(token)
+        const freshUser = userRes.user || userRes.data || null
+        if (freshUser) {
+          // If DB is missing wallet but cookie has it, sync once per session
+          const cookieWallet = cookies.get('walletAddress')
+          const syncKey = 'walletSyncDone'
+          const didSync = typeof window !== 'undefined' ? sessionStorage.getItem(syncKey) : '1'
+          if (!freshUser.cavosWalletAddress && cookieWallet && !didSync) {
+            try {
+              await api.user.walletSync(cookieWallet, token)
+              sessionStorage.setItem(syncKey, '1')
+              const refetched = await api.user.profile(token)
+              const refUser = refetched.user || refetched.data || freshUser
+              setUserData(refUser)
+              localStorage.setItem('user', JSON.stringify(refUser))
+            } catch {
+              setUserData(freshUser)
+              localStorage.setItem('user', JSON.stringify(freshUser))
+            }
+          } else {
+            setUserData(freshUser)
+            localStorage.setItem('user', JSON.stringify(freshUser))
+          }
+
+          const activeWallet = (cookieWallet && !freshUser.cavosWalletAddress) ? cookieWallet : freshUser.cavosWalletAddress
+          if (activeWallet) {
             const usdcAddress = process.env.NEXT_PUBLIC_USDC_ADDRESS || '0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf56a5fc'
             try {
-              const balanceRes = await api.cavos.balance(user.cavosWalletAddress, usdcAddress, '6', token)
+              const balanceRes = await api.cavos.balance(activeWallet, usdcAddress, '6', token)
               setBalance(balanceRes.data?.formatted || balanceRes.data?.balance || '0')
-            } catch (err: any) {
-              console.error('Balance fetch failed:', err)
+            } catch {
               setBalance('0')
             }
           }
-        } catch (err: any) {
-          console.error('User data parse failed:', err)
+          setLoading(false)
+          return
+        }
+        // If response shape unexpected, fall through to cached user
+        throw new Error('Invalid profile response')
+      } catch {
+        // Fallback to cached user (cookie or localStorage)
+        const cookieUser = cookies.get('user')
+        const userStr = cookieUser || localStorage.getItem('user')
+        if (userStr) {
+          try {
+            const cachedUser = JSON.parse(userStr)
+            setUserData(cachedUser)
+          } catch {
+            // ignore parse errors
+          }
+        }
+        if (!userStr) {
           setError('Failed to load user data')
         }
-      } else {
-        // Try to get user data from backend
-        try {
-          const userRes = await api.user.profile(token)
-          setUserData(userRes.data)
-        } catch (err: any) {
-          console.error('Profile fetch failed:', err)
-          setError('Failed to load profile')
-        }
+        setLoading(false)
       }
-      
-      setLoading(false)
     }
 
     checkAuth()
@@ -73,15 +98,48 @@ export default function DashboardPage() {
 
   const handleLogout = () => {
     localStorage.clear()
+    // Remove all auth-related cookies
+    cookies.removeMultiple(['jwt', 'accessToken', 'refreshToken', 'walletAddress', 'user'])
     router.push('/login')
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading...</p>
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <div className="w-full max-w-2xl">
+          <div className="mb-6">
+            <div className="h-8 w-40 bg-muted rounded animate-pulse" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+                  <div className="h-6 w-6 bg-muted rounded-full animate-pulse" />
+                </div>
+                <div className="h-7 w-24 bg-muted rounded mb-2 animate-pulse" />
+                <div className="h-3 w-32 bg-muted rounded animate-pulse" />
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="border rounded-lg p-6">
+              <div className="h-5 w-32 bg-muted rounded mb-4 animate-pulse" />
+              <div className="space-y-3">
+                <div className="h-10 w-full bg-muted rounded animate-pulse" />
+                <div className="h-10 w-full bg-muted rounded animate-pulse" />
+                <div className="h-10 w-full bg-muted rounded animate-pulse" />
+              </div>
+            </div>
+            <div className="border rounded-lg p-6">
+              <div className="h-5 w-40 bg-muted rounded mb-4 animate-pulse" />
+              <div className="space-y-3">
+                <div className="h-4 w-48 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-56 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-64 bg-muted rounded animate-pulse" />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -112,6 +170,8 @@ export default function DashboardPage() {
       </div>
     )
   }
+
+  const displayWallet = userData.cavosWalletAddress || cookies.get('walletAddress') || ''
 
   return (
     <div className="min-h-screen bg-background">
@@ -156,8 +216,8 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-sm font-mono">
-                {userData.cavosWalletAddress ? 
-                  `${userData.cavosWalletAddress.slice(0, 6)}...${userData.cavosWalletAddress.slice(-4)}` : 
+                {displayWallet ? 
+                  `${displayWallet.slice(0, 6)}...${displayWallet.slice(-4)}` :
                   'Not set'
                 }
               </div>
@@ -211,7 +271,7 @@ export default function DashboardPage() {
               <div>
                 <label className="text-sm font-medium">Wallet Address</label>
                 <p className="text-sm font-mono text-muted-foreground break-all">
-                  {userData.cavosWalletAddress || 'Not configured'}
+                  {displayWallet || 'Not configured'}
                 </p>
               </div>
             </CardContent>

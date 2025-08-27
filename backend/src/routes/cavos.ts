@@ -22,18 +22,23 @@ router.post('/signup', async (req: Request, res: Response) => {
       user = new User({
         email: email.toLowerCase(),
         name: email.split('@')[0],
-        cavosWalletAddress: walletAddress,
+        cavosWalletAddress: walletAddress || undefined, // Only set if available
         bankDetails: { bankName: 'Not Set', accountNumber: 'Not Set', accountName: 'Not Set' },
         balanceUSD: 0,
         balanceNGN: 0
       });
       await user.save();
-    } else if (!user.cavosWalletAddress && walletAddress) {
-      user.cavosWalletAddress = walletAddress;
-      await user.save();
+    } else {
+      if (!user.cavosWalletAddress && walletAddress) {
+        user.cavosWalletAddress = walletAddress;
+        await user.save();
+      }
     }
 
     const token = generateToken((user._id as unknown as { toString: () => string })?.toString() || '');
+
+    const hasBankDetails = !!(user.bankDetails && user.bankDetails.bankName !== 'Not Set' && user.bankDetails.accountNumber !== 'Not Set' && user.bankDetails.accountName !== 'Not Set');
+    const hasWallet = !!user.cavosWalletAddress;
 
     res.json({ success: true, data: result, token, user: {
       id: user._id,
@@ -41,7 +46,9 @@ router.post('/signup', async (req: Request, res: Response) => {
       name: user.name,
       cavosWalletAddress: user.cavosWalletAddress,
       balanceUSD: user.balanceUSD,
-      balanceNGN: user.balanceNGN
+      balanceNGN: user.balanceNGN,
+      hasBankDetails,
+      hasWallet
     }});
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -65,17 +72,22 @@ router.post('/login', async (req: Request, res: Response) => {
       user = new User({
         email: email.toLowerCase(),
         name: email.split('@')[0],
-        cavosWalletAddress: walletAddress,
+        cavosWalletAddress: walletAddress || undefined, // Only set if available
         bankDetails: { bankName: 'Not Set', accountNumber: 'Not Set', accountName: 'Not Set' },
         balanceUSD: 0,
         balanceNGN: 0
       });
       await user.save();
-    } else if (!user.cavosWalletAddress && walletAddress) {
-      user.cavosWalletAddress = walletAddress;
-      await user.save();
+    } else {
+      if (!user.cavosWalletAddress && walletAddress) {
+        user.cavosWalletAddress = walletAddress;
+        await user.save();
+      }
     }
     const token = generateToken((user._id as unknown as { toString: () => string })?.toString() || '');
+
+    const hasBankDetails = !!(user.bankDetails && user.bankDetails.bankName !== 'Not Set' && user.bankDetails.accountNumber !== 'Not Set' && user.bankDetails.accountName !== 'Not Set');
+    const hasWallet = !!user.cavosWalletAddress;
 
     res.json({ success: true, data: result, token, user: {
       id: user._id,
@@ -83,7 +95,9 @@ router.post('/login', async (req: Request, res: Response) => {
       name: user.name,
       cavosWalletAddress: user.cavosWalletAddress,
       balanceUSD: user.balanceUSD,
-      balanceNGN: user.balanceNGN
+      balanceNGN: user.balanceNGN,
+      hasBankDetails,
+      hasWallet
     }});
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -115,6 +129,16 @@ router.get('/balance/:address', authenticateToken, async (req: Request, res: Res
       return res.status(400).json({ success: false, message: 'tokenAddress is required' });
     }
     const result = await cavosService.getBalance(address, tokenAddress, decimals);
+
+    // Persist wallet address if user record is missing it
+    if (req.user && !req.user.cavosWalletAddress && address) {
+      const u = await User.findById(req.user._id);
+      if (u && !u.cavosWalletAddress) {
+        u.cavosWalletAddress = address;
+        await u.save();
+      }
+    }
+
     res.json({ success: true, data: result });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -130,6 +154,16 @@ router.post('/execute', authenticateToken, async (req: Request, res: Response) =
       return res.status(400).json({ success: false, message: 'address, calls, accessToken are required' });
     }
     const result = await cavosService.execute(address, calls, accessToken);
+
+    // Persist wallet address if user record is missing it
+    if (req.user && !req.user.cavosWalletAddress && address) {
+      const u = await User.findById(req.user._id);
+      if (u && !u.cavosWalletAddress) {
+        u.cavosWalletAddress = address;
+        await u.save();
+      }
+    }
+
     res.json({ success: true, data: result });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';

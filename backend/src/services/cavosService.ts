@@ -8,33 +8,57 @@ export interface CavosConfig {
 }
 
 class CavosService {
-  private cavosAuth: CavosAuth;
-  private config: CavosConfig;
+  private cavosAuth: CavosAuth | null = null;
+  private config: CavosConfig | null = null;
+  private initialized = false;
 
-  constructor() {
+  private initialize() {
+    if (this.initialized) return;
+
     const network = (process.env.CAVOS_NETWORK as CavosConfig['network']) || 'sepolia';
     const appId = process.env.CAVOS_APP_ID || '';
     const orgSecret = process.env.CAVOS_ORG_SECRET || '';
+    
+    // Validate required environment variables
+    if (!appId || !orgSecret) {
+      const missingVars = [];
+      if (!appId) missingVars.push('CAVOS_APP_ID');
+      if (!orgSecret) missingVars.push('CAVOS_ORG_SECRET');
+      
+      throw new Error(
+        `❌ Cavos service initialization failed! Missing required environment variables: ${missingVars.join(', ')}\n` +
+        `Please set the following environment variables:\n` +
+        `- CAVOS_APP_ID=your_cavos_app_id\n` +
+        `- CAVOS_ORG_SECRET=your_cavos_org_secret\n` +
+        `- CAVOS_NETWORK=sepolia (optional, defaults to sepolia)`
+      );
+    }
+    
     this.config = { network, appId, orgSecret };
     this.cavosAuth = new CavosAuth(network, appId);
+    this.initialized = true;
   }
 
   getConfig() {
-    return this.config;
+    this.initialize();
+    return this.config!;
   }
 
   async signUp(email: string, password: string) {
-    const result = await this.cavosAuth.signUp(email, password, this.config.orgSecret);
+    this.initialize();
+    const result = await this.cavosAuth!.signUp(email, password, this.config!.orgSecret);
     return result;
   }
 
   async signIn(email: string, password: string) {
-    const result = await this.cavosAuth.signIn(email, password, this.config.orgSecret);
+    this.initialize();
+    const result = await this.cavosAuth!.signIn(email, password, this.config!.orgSecret);
     return result;
   }
 
   async refreshToken(refreshToken: string) {
-    const result = await this.cavosAuth.refreshToken(refreshToken, this.config.network);
+    this.initialize();
+    const result = await this.cavosAuth!.refreshToken(refreshToken, this.config!.network);
     return result;
   }
 
@@ -44,7 +68,8 @@ class CavosService {
   }
 
   async execute(address: string, calls: any[], accessToken: string) {
-    const result = await this.cavosAuth.executeCalls(address, calls, accessToken);
+    this.initialize();
+    const result = await this.cavosAuth!.executeCalls(address, calls, accessToken);
     return result;
   }
 }
