@@ -153,10 +153,10 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
 });
 
 /**
- * GET /api/transaction/:id
+ * GET /api/transaction/details/:id
  * Get specific transaction details
  */
-router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
+router.get('/details/:id', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
@@ -318,10 +318,10 @@ router.get('/summary', authenticateToken, async (req: Request, res: Response) =>
 });
 
 /**
- * POST /api/transaction/:id/cancel
+ * POST /api/transaction/details/:id/cancel
  * Cancel a pending transaction
  */
-router.post('/:id/cancel', authenticateToken, async (req: Request, res: Response) => {
+router.post('/details/:id/cancel', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;

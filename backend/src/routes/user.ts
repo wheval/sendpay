@@ -246,6 +246,31 @@ router.get('/bank-accounts', authenticateToken, async (req: Request, res: Respon
     const userId = req.user._id;
     const bankAccounts = await BankAccount.find({ userId }).sort({ isDefault: -1, createdAt: -1 });
 
+    // Fallback: use embedded user.bankDetails when no separate bank accounts exist
+    if (!bankAccounts.length && req.user.bankDetails &&
+        req.user.bankDetails.bankName && req.user.bankDetails.accountNumber && req.user.bankDetails.accountName &&
+        req.user.bankDetails.bankName !== 'Not Set' && req.user.bankDetails.accountNumber !== 'Not Set' && req.user.bankDetails.accountName !== 'Not Set') {
+      const bd = req.user.bankDetails;
+      const maskedAccountNumber = bd.accountNumber.length <= 4 
+        ? bd.accountNumber 
+        : `${bd.accountNumber.slice(0, 4)}****${bd.accountNumber.slice(-4)}`;
+
+      return res.json({
+        success: true,
+        message: 'Bank accounts retrieved successfully',
+        bankAccounts: [
+          {
+            id: req.user._id, // virtual id to satisfy frontend
+            bankName: bd.bankName,
+            accountNumber: bd.accountNumber,
+            accountName: bd.accountName,
+            isDefault: true,
+            maskedAccountNumber
+          }
+        ]
+      });
+    }
+
     res.json({
       success: true,
       message: 'Bank accounts retrieved successfully',

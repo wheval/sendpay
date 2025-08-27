@@ -50,22 +50,38 @@ export default function HistoryPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = cookies.get('jwt')
+      const token = cookies.get('jwt') || localStorage.getItem('jwt')
       if (!token) {
         router.push('/login')
         return
       }
 
       try {
-        // Get transaction history
+        // Get transaction history (prefer data.transactions)
         const historyRes = await api.transaction.history(token)
-        setTransactions(historyRes.data)
+        const items = historyRes.data?.transactions || historyRes.history || historyRes.data || []
+        setTransactions(Array.isArray(items) ? items : [])
 
-        // Get transaction summary
+        // Get transaction summary and normalize to UI shape
         const summaryRes = await api.transaction.summary(token)
-        setSummary(summaryRes.data)
+        const stats = summaryRes.data?.statistics || summaryRes.summary || summaryRes.data || null
+        if (stats) {
+          setSummary({
+            totalReceived: Number(stats.totalReceivedUSD) || 0,
+            totalWithdrawn: Number(stats.totalWithdrawnUSD) || 0,
+            totalTransfers: Number(stats.totalTransactions) || 0,
+            pendingAmount: Number(stats.pendingCount) || 0,
+            completedAmount: Number(stats.completedCount) || 0,
+          })
+        } else {
+          setSummary(null)
+        }
       } catch (err: any) {
-        setError('Failed to load transaction history')
+        setTransactions([])
+        setSummary(null)
+        if (!err?.message?.includes('404')) {
+          setError('Failed to load transaction history')
+        }
       } finally {
         setLoading(false)
       }
@@ -74,7 +90,7 @@ export default function HistoryPage() {
     checkAuth()
   }, [router])
 
-  const filteredTransactions = transactions.filter(transaction => {
+  const filteredTransactions = (Array.isArray(transactions) ? transactions : []).filter(transaction => {
     const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          transaction.reference?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === "all" || transaction.status === statusFilter
@@ -176,10 +192,47 @@ export default function HistoryPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading transactions...</p>
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <div className="w-full max-w-4xl">
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <div className="h-8 w-48 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-64 bg-muted rounded mt-2 animate-pulse" />
+            </div>
+            <div className="h-9 w-36 bg-muted rounded animate-pulse" />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="h-4 w-28 bg-muted rounded animate-pulse" />
+                  <div className="h-6 w-6 bg-muted rounded-full animate-pulse" />
+                </div>
+                <div className="h-7 w-24 bg-muted rounded mb-2 animate-pulse" />
+                <div className="h-3 w-32 bg-muted rounded animate-pulse" />
+              </div>
+            ))}
+          </div>
+
+          <div className="border rounded-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="h-6 w-40 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+            </div>
+            <div className="space-y-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="flex items-center space-x-4 p-4 border rounded-lg">
+                  <div className="w-8 h-8 bg-muted rounded-full animate-pulse" />
+                  <div className="flex-1">
+                    <div className="h-4 w-48 bg-muted rounded mb-2 animate-pulse" />
+                    <div className="h-3 w-64 bg-muted rounded animate-pulse" />
+                  </div>
+                  <div className="h-6 w-20 bg-muted rounded animate-pulse" />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     )

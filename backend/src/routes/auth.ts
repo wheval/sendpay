@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { User } from '../models/User';
 import { generateToken } from '../middleware/auth';
 import { validateEmail } from '../utils/helpers';
+import { BankAccount } from '../models/BankAccount';
 
 const router = Router();
 
@@ -43,9 +44,10 @@ router.post('/login', async (req: Request, res: Response) => {
 
     if (!user) {
       const mockCavosWallet = `0x${Math.random().toString(16).substring(2, 34)}`;
+      
       user = new User({
         email: email.toLowerCase(),
-        name: email.split('@')[0],
+        name: email.split('@')[0], // Use email prefix as name
         cavosWalletAddress: mockCavosWallet,
         bankDetails: {
           bankName: 'Not Set',
@@ -59,6 +61,7 @@ router.post('/login', async (req: Request, res: Response) => {
       await user.save();
     }
 
+    // Generate JWT token
     const jwtToken = generateToken(user._id?.toString() || '');
 
     res.json({
@@ -91,12 +94,17 @@ router.post('/login', async (req: Request, res: Response) => {
  */
 router.post('/onboarding', async (req: Request, res: Response) => {
   try {
+    // Test: Check if request body exists
     if (!req.body || Object.keys(req.body).length === 0) {
-      return res.status(400).json({ success: false, message: 'Request body is empty' });
+      return res.status(400).json({
+        success: false,
+        message: 'Request body is empty'
+      });
     }
 
     const { email, name, phone, bankDetails } = req.body;
 
+    // Test: Check individual fields
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email is required' });
     }
@@ -113,11 +121,13 @@ router.post('/onboarding', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Invalid email format' });
     }
 
+    // Find user
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
+    // Update user with onboarding information
     user.name = name;
     if (phone) user.phone = phone;
     user.bankDetails = {
@@ -128,6 +138,27 @@ router.post('/onboarding', async (req: Request, res: Response) => {
 
     await user.save();
 
+    // Upsert a BankAccount document from the bankDetails
+    try {
+      const existing = await BankAccount.findOne({ userId: user._id, accountNumber: bankDetails.accountNumber });
+      const isDefault = !(await BankAccount.exists({ userId: user._id }));
+      if (existing) {
+        existing.bankName = bankDetails.bankName;
+        existing.accountName = bankDetails.accountName;
+        if (isDefault) existing.isDefault = true;
+        await existing.save();
+      } else {
+        await new BankAccount({
+          userId: user._id,
+          bankName: bankDetails.bankName,
+          accountNumber: bankDetails.accountNumber,
+          accountName: bankDetails.accountName,
+          isDefault
+        }).save();
+      }
+    } catch {}
+
+    // Generate new token
     const jwtToken = generateToken(user._id?.toString() || '');
 
     res.json({

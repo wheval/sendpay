@@ -106,7 +106,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
-        <div className="w-full max-w-2xl">
+        <div className="w-full container">
           <div className="mb-6">
             <div className="h-8 w-40 bg-muted rounded animate-pulse" />
           </div>

@@ -54,17 +54,18 @@ export default function WithdrawPage() {
       try {
         // Get user balance
         const balanceRes = await api.user.balance(token)
-        setBalance(balanceRes.data)
+        const b = balanceRes.balance || balanceRes.data || { USD: 0, NGN: 0 }
+        setBalance({ usd: Number(b.USD) || 0, ngn: Number(b.NGN) || 0 })
 
         // Get bank accounts
         const accountsRes = await api.user.bankAccounts(token)
-        setBankAccounts(accountsRes.data)
+        const accounts = accountsRes.bankAccounts || accountsRes.data || []
+        setBankAccounts(accounts)
         
-        if (accountsRes.data.length > 0) {
-          setSelectedBankAccount(accountsRes.data[0].id)
+        if (accounts.length > 0) {
+          setSelectedBankAccount(accounts[0].id)
         }
       } catch (err: any) {
-        console.error('Failed to load data:', err)
         setError('Failed to load account information')
       }
     }
@@ -260,7 +261,7 @@ export default function WithdrawPage() {
                     <div>
                       <h4 className="text-sm font-medium text-blue-900">Processing Time</h4>
                       <p className="text-sm text-blue-700 mt-1">
-                        Bank transfers typically take 1-3 business days to complete. You'll receive a notification once the funds are credited to your account.
+                        Bank transfers typically take 1-3 minutes to complete. You'll receive a notification once the funds are credited to your account.
                       </p>
                     </div>
                   </div>
@@ -293,7 +294,7 @@ export default function WithdrawPage() {
     <div className="min-h-screen bg-background">
       <Navigation />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="max-w-2xl mx-auto">
+        <div className="mx-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-bold">Withdraw Funds</h1>
             <p className="text-muted-foreground">
@@ -418,19 +419,19 @@ export default function WithdrawPage() {
                   <div className="space-y-2">
                     <h4 className="font-medium">Processing Time</h4>
                     <p className="text-sm text-muted-foreground">
-                      Bank transfers typically take 1-3 business days
+                      Bank transfers typically take 1-3 minutes
                     </p>
                   </div>
                   <div className="space-y-2">
                     <h4 className="font-medium">Fees</h4>
                     <p className="text-sm text-muted-foreground">
-                      No withdrawal fees for amounts above $10
+                      No withdrawal fees
                       </p>
                     </div>
                   <div className="space-y-2">
                     <h4 className="font-medium">Minimum Amount</h4>
                     <p className="text-sm text-muted-foreground">
-                      $10 USD or ₦10,000 NGN
+                      $1 USD or ₦100 NGN
                     </p>
                 </div>
               </CardContent>
