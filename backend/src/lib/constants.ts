@@ -1,0 +1,34 @@
+export type StarknetNetwork = 'sepolia' | 'mainnet'
+export const STARKNET_NETWORK: StarknetNetwork = ((process.env.STARKNET_NETWORK || process.env.NEXT_PUBLIC_STARKNET_NETWORK) as StarknetNetwork) || 'sepolia'
+
+type TokenConfig = { address: string; decimals: number }
+
+const STRK: Record<StarknetNetwork, TokenConfig> = {
+	sepolia: { address: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d', decimals: 18 },
+	mainnet: { address: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d', decimals: 18 }
+}
+
+const USDC: Record<StarknetNetwork, TokenConfig> = {
+	sepolia: { address: '0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080', decimals: 6 },
+	mainnet: { address: '0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf56a5fc', decimals: 6 }
+}
+
+const USDT: Record<StarknetNetwork, TokenConfig> = {
+	sepolia: { address: '0x03b7e72bf60e6b69a70529cb527d1ef5b48ae62736a7e3bf314e6e0c8ae6e1f2', decimals: 6 },
+	mainnet: { address: '0x03801ddabb5f866e0632bfe800f4ef4b450c866f9ee7b8a28d0b9230e6505bdf', decimals: 6 }
+}
+
+const ETH: Record<StarknetNetwork, TokenConfig> = {
+	sepolia: { address: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7', decimals: 18 },
+	mainnet: { address: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7', decimals: 18 }
+}
+
+export const TOKENS = { STRK, USDC, USDT, ETH, NETWORK: STARKNET_NETWORK }
+
+export function getTokenConfig(symbol: 'STRK'|'USDC'|'USDT'|'ETH'): TokenConfig {
+	return TOKENS[symbol][TOKENS.NETWORK]
+}
+
+export const DEFAULT_USD_NGN_FALLBACK: number = Number(process.env.USD_NGN_FALLBACK || 1400)
+
+

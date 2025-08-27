@@ -32,6 +32,9 @@ export default function ReceivePage() {
   const [copied, setCopied] = useState(false)
   const router = useRouter()
 
+  // Feature flag - set to false to disable the feature
+  const isFeatureEnabled = false
+
   useEffect(() => {
     const token = cookies.get('jwt')
     if (!token) {
@@ -253,6 +256,36 @@ export default function ReceivePage() {
               Create a payment request and share it with others to receive money
             </p>
           </div>
+
+          {/* Feature Not Available Overlay */}
+          {!isFeatureEnabled && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-background rounded-lg max-w-md w-full mx-4 p-6 text-center">
+                <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <DollarSign className="w-8 h-8 text-yellow-600" />
+                </div>
+                <h2 className="text-xl font-bold mb-2">Feature Not Available Yet</h2>
+                <p className="text-muted-foreground mb-6">
+                  The receive payment feature is currently under development and will be available soon.
+                </p>
+                <div className="space-y-3">
+                  <Button 
+                    onClick={() => router.push('/dashboard')}
+                    className="w-full"
+                  >
+                    Back to Dashboard
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => window.history.back()}
+                    className="w-full"
+                  >
+                    Go Back
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
             <Card>
               <CardHeader>

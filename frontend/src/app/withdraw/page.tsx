@@ -33,7 +33,6 @@ interface WithdrawalRequest {
 
 export default function WithdrawPage() {
   const [amount, setAmount] = useState("")
-  const [currency, setCurrency] = useState("USD")
   const [selectedBankAccount, setSelectedBankAccount] = useState("")
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [withdrawalRequest, setWithdrawalRequest] = useState<WithdrawalRequest | null>(null)
@@ -41,6 +40,8 @@ export default function WithdrawPage() {
   const [error, setError] = useState("")
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [balance, setBalance] = useState<{ usd: number; ngn: number }>({ usd: 0, ngn: 0 })
+  const [selectedTokens, setSelectedTokens] = useState<{ usdc: boolean; strk: boolean }>({ usdc: false, strk: false })
+  const [tokenBalances, setTokenBalances] = useState<{ usdc: number; strk: number }>({ usdc: 0, strk: 0 })
   const router = useRouter()
 
   useEffect(() => {
@@ -52,10 +53,22 @@ export default function WithdrawPage() {
       }
 
       try {
-        // Get user balance
-        const balanceRes = await api.user.balance(token)
-        const b = balanceRes.balance || balanceRes.data || { USD: 0, NGN: 0 }
-        setBalance({ usd: Number(b.USD) || 0, ngn: Number(b.NGN) || 0 })
+        // Get real-time balance from transaction summary (same as dashboard)
+        const summaryRes = await api.transaction.summary(token)
+        const totals = summaryRes.data?.totals || {}
+        const exchangeRate = summaryRes.data?.exchangeRate || 0
+        
+        // Set balance from summary totals
+        setBalance({ 
+          usd: Number(totals.USD) || 0, 
+          ngn: Number(totals.NGN) || 0 
+        })
+
+        // Set individual token balances
+        setTokenBalances({
+          usdc: Number(totals.USDC_USD) || 0,
+          strk: Number(totals.STRK_USD) || 0
+        })
 
         // Get bank accounts
         const accountsRes = await api.user.bankAccounts(token)
@@ -111,22 +124,26 @@ export default function WithdrawPage() {
       return
     }
 
-    const amountNum = parseFloat(amount)
-    if (currency === "USD" && amountNum > balance.usd) {
-      setError("Insufficient USD balance")
+    if (!selectedTokens.usdc && !selectedTokens.strk) {
+      setError("Please select at least one token to use for withdrawal.")
       return
     }
 
-    if (currency === "NGN" && amountNum > balance.ngn) {
+    const amountNum = parseFloat(amount)
+    if (amountNum > balance.ngn) {
       setError("Insufficient NGN balance")
       return
     }
 
     const formData = {
       amount: amountNum,
-      currency,
+      currency: "NGN",
       bankAccountId: selectedBankAccount,
-      description: `Withdrawal to bank account`
+      description: `Withdrawal to bank account`,
+      selectedTokens: {
+        usdc: selectedTokens.usdc,
+        strk: selectedTokens.strk
+      }
     }
 
     if (!validateForm(formData)) {
@@ -317,39 +334,60 @@ export default function WithdrawPage() {
                   )}
 
                   <form onSubmit={handleWithdraw} className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                        <Label htmlFor="amount">Amount</Label>
-                  <Input
-                    id="amount"
-                    type="number"
-                          step="0.01"
-                          min="0.01"
-                          placeholder="0.00"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                          required
-                          className={getFieldError('amount') ? 'border-red-500' : ''}
-                        />
-                        {getFieldError('amount') && (
-                          <p className="text-red-500 text-xs">{getFieldError('amount')}</p>
-                  )}
-                </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="currency">Currency</Label>
-                        <Select value={currency} onValueChange={setCurrency}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="USD">USD</SelectItem>
-                            <SelectItem value="NGN">NGN</SelectItem>
-                          </SelectContent>
-                        </Select>
-                  </div>
-                </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="amount">Amount (NGN)</Label>
+                      <Input
+                        id="amount"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="0.00"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        required
+                        className={getFieldError('amount') ? 'border-red-500' : ''}
+                      />
+                      {getFieldError('amount') && (
+                        <p className="text-red-500 text-xs">{getFieldError('amount')}</p>
+                      )}
+                    </div>
 
-                <div className="space-y-2">
+                    <div className="space-y-4">
+                      <Label className="text-sm font-medium">Select Token to Use</Label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            id="usdc-token"
+                            name="token-selection"
+                            checked={selectedTokens.usdc}
+                            onChange={() => setSelectedTokens({ usdc: true, strk: false })}
+                            className="rounded border-gray-300"
+                          />
+                          <Label htmlFor="usdc-token" className="text-sm">
+                            USDC (${tokenBalances.usdc.toFixed(2)})
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            id="strk-token"
+                            name="token-selection"
+                            checked={selectedTokens.strk}
+                            onChange={() => setSelectedTokens({ usdc: false, strk: true })}
+                            className="rounded border-gray-300"
+                          />
+                          <Label htmlFor="strk-token" className="text-sm">
+                            STRK (${tokenBalances.strk.toFixed(2)})
+                          </Label>
+                        </div>
+                      </div>
+                      {!selectedTokens.usdc && !selectedTokens.strk && (
+                        <p className="text-red-500 text-xs">Please select a token to use for withdrawal</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
                       <Label htmlFor="bankAccount">Bank Account</Label>
                       {bankAccounts?.length > 0 ? (
                         <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>

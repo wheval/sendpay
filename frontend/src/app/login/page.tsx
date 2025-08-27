@@ -23,6 +23,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { cookies } from "@/lib/cookies"
 import { getActiveBanks } from "@/lib/constants"
+import { normalizeHex } from "@/lib/utils"
 
 export default function LoginPage() {
   const [isOnboarding, setIsOnboarding] = useState(false)
@@ -93,7 +94,7 @@ export default function LoginPage() {
       }
       const accessToken = cavosData?.authData?.accessToken || cavosData?.access_token
       const refreshToken = cavosData?.authData?.refreshToken || cavosData?.refresh_token
-      const walletAddr = cavosData?.wallet?.address
+      const walletAddr = normalizeHex(cavosData?.wallet?.address || '')
       if (accessToken) {
         cookies.set('accessToken', accessToken, 1)
       }
@@ -191,7 +192,7 @@ export default function LoginPage() {
       }
       const accessToken = cavosData?.authData?.accessToken || cavosData?.access_token
       const refreshToken = cavosData?.authData?.refreshToken || cavosData?.refresh_token
-      const walletAddr = cavosData?.wallet?.address
+      const walletAddr = normalizeHex(cavosData?.wallet?.address || '')
       if (accessToken) {
         cookies.set('accessToken', accessToken, 1) // 1 day
       }
@@ -304,10 +305,8 @@ export default function LoginPage() {
         // Only move to step 3 after successful save
         setStep(3)
         
-        // Redirect to dashboard after showing success
-        setTimeout(() => {
-          router.push('/dashboard')
-        }, 2000)
+        // Redirect to dashboard immediately
+        router.push('/dashboard')
         
       } catch (err: any) {
         let errorMessage = 'Onboarding failed. Please try again.'

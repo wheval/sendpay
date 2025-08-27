@@ -193,7 +193,7 @@ export default function HistoryPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
-        <div className="w-full max-w-4xl">
+        <div className="w-full container">
           <div className="flex justify-between items-center mb-8">
             <div>
               <div className="h-8 w-48 bg-muted rounded animate-pulse" />
@@ -454,7 +454,7 @@ export default function HistoryPage() {
                         
                         <div className="text-right">
                           <div className="flex items-center space-x-2">
-                            <div className="text-right">
+                            <div className="text-right flex items-center gap-1">
                               <p className="font-medium">
                                 {transaction.type === 'withdrawn' ? '-' : '+'}
                                 {formatCurrency(transaction.amountUSD, 'USD')}
@@ -463,9 +463,9 @@ export default function HistoryPage() {
                                 {formatCurrency(transaction.amountNGN, 'NGN')}
                               </p>
                             </div>
-                            {getStatusIcon(transaction.status)}
                           </div>
-                          <p className={`text-sm font-medium capitalize ${getStatusColor(transaction.status)}`}>
+                          <p className={`text-sm font-medium flex items-center gap-1 capitalize ${getStatusColor(transaction.status)}`}>
+                            {getStatusIcon(transaction.status)}
                             {transaction.status}
                           </p>
                         </div>

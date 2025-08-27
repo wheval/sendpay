@@ -3,6 +3,7 @@ import { cavosService } from '../services/cavosService';
 import { authenticateToken } from '../middleware/auth';
 import { User } from '../models/User';
 import { generateToken } from '../middleware/auth';
+import { starknetService } from '../services/starknetService';
 
 const router = express.Router();
 
@@ -134,12 +135,22 @@ router.get('/balance/:address', authenticateToken, async (req: Request, res: Res
     if (req.user && !req.user.cavosWalletAddress && address) {
       const u = await User.findById(req.user._id);
       if (u && !u.cavosWalletAddress) {
-        u.cavosWalletAddress = address;
+        u.cavosWalletAddress = address.toLowerCase();
         await u.save();
       }
     }
 
-    res.json({ success: true, data: result });
+    // RPC fallback for any token if Cavos returns 0
+    let data = result
+    const zeroLike = (!result?.balance && !Number(result?.formatted)) || (String(result?.formatted) === '0')
+    if (zeroLike) {
+      try {
+        const fallback = await starknetService.getErc20Balance(address, tokenAddress, String(decimals || '18'))
+        data = { balance: Number(fallback.balance) || 0, formatted: fallback.formatted }
+      } catch {}
+    }
+
+    res.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ success: false, message: 'Balance check failed', error: message });

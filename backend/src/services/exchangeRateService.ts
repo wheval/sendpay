@@ -1,15 +1,18 @@
 import axios from 'axios';
 import { IExchangeRate } from '../types';
+import { DEFAULT_USD_NGN_FALLBACK } from '../lib/constants';
 
 class ExchangeRateService {
-  private apiKey: string;
-  private baseUrl: string;
+  private flutterwaveKey: string;
+  private flutterwaveBaseUrl: string;
+  private flutterwaveSandboxBaseUrl: string;
   private cache: Map<string, { rate: number; timestamp: number }>;
   private cacheExpiry: number = 3600000; // 1 hour in milliseconds
 
   constructor() {
-    this.apiKey = process.env.EXCHANGE_RATE_API_KEY || '';
-    this.baseUrl = process.env.EXCHANGE_RATE_BASE_URL || 'https://api.exchangerate-api.com/v4';
+    this.flutterwaveKey = process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || '';
+    this.flutterwaveBaseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://api.flutterwave.com';
+    this.flutterwaveSandboxBaseUrl = process.env.FLUTTERWAVE_SANDBOX_BASE_URL || 'https://api.flutterwave.cloud/developersandbox';
     this.cache = new Map();
   }
 
@@ -26,30 +29,63 @@ class ExchangeRateService {
     }
 
     try {
-      // Try to get real-time rate from API
-      if (this.apiKey) {
-        const response = await axios.get(`${this.baseUrl}/latest/USD`);
-        const rate = response.data.rates.NGN;
-        
-        // Cache the rate
-        this.cache.set(cacheKey, { rate, timestamp: Date.now() });
-        
-        return rate;
+      // Read key at call-time to avoid early import order issues
+      const runtimeKey = this.flutterwaveKey || process.env.FLW_SECRET_KEY || process.env.FLUTTERWAVE_SECRET_KEY || ''
+      // Flutterwave FX quote (supports live and sandbox)
+      if (!runtimeKey) {
+        console.warn('[fx] Flutterwave key missing; cannot fetch USD->NGN')
+      } else {
+        // Prefer sandbox endpoint if FLW_ENV=sandbox
+        const env = (process.env.FLW_ENV || process.env.FLUTTERWAVE_ENV || '').toLowerCase()
+        const isSandbox = env === 'sandbox' || /sandbox/i.test(runtimeKey)
+
+        let fwRate = 0
+        if (isSandbox) {
+          const url = `${this.flutterwaveSandboxBaseUrl.replace(/\/$/, '')}/transfers/rates`
+          const body = { source: { currency: 'USD' }, destination: { currency: 'NGN', amount: 1 } }
+          const fwRes = await axios.post(url, body, {
+            headers: { Authorization: `Bearer ${runtimeKey}`, 'content-type': 'application/json', accept: 'application/json' },
+            timeout: 8000,
+          })
+          const status = fwRes.status
+          const data = fwRes.data
+          fwRate = Number(data?.data?.rate ?? data?.rate)
+          if (isNaN(fwRate) || fwRate <= 0) {
+            console.warn('[fx] Flutterwave sandbox returned no rate. status:', status, 'body:', JSON.stringify(data))
+          }
+        } else {
+          const url = `${this.flutterwaveBaseUrl.replace(/\/$/, '')}/v3/rates`
+          const fwRes = await axios.get(url, {
+            params: { from: 'USD', to: 'NGN', amount: 1 },
+            headers: { Authorization: `Bearer ${runtimeKey}` },
+            timeout: 8000,
+          })
+          const status = fwRes.status
+          const data = fwRes.data
+          fwRate = Number(data?.data?.rate ?? data?.rate)
+          if (isNaN(fwRate) || fwRate <= 0) {
+            console.warn('[fx] Flutterwave live returned no rate. status:', status, 'body:', JSON.stringify(data))
+          }
+        }
+        if (!isNaN(fwRate) && fwRate > 0) {
+          console.log('[fx] Flutterwave rate used USD->NGN:', fwRate)
+          this.cache.set(cacheKey, { rate: fwRate, timestamp: Date.now() })
+          return fwRate
+        }
       }
-    } catch (error) {
-      console.warn('Failed to fetch real-time exchange rate:', error);
+    } catch (fwErr: any) {
+      console.warn('[fx] Flutterwave request failed', fwErr?.response?.status || '', fwErr?.message || fwErr)
     }
 
-    // Fallback to cached rate or default rate
+    // Fallback: return cached rate if present; otherwise configured default
     if (cached) {
-      return cached.rate;
+      console.warn('[fx] Using cached USD->NGN rate:', cached.rate)
+      return cached.rate
     }
-
-    // Default rate (1 USD = 1000 NGN) - should be updated regularly
-    const defaultRate = 1000;
-    this.cache.set(cacheKey, { rate: defaultRate, timestamp: Date.now() });
-    
-    return defaultRate;
+    const fallback = DEFAULT_USD_NGN_FALLBACK
+    console.warn('[fx] Using configured fallback USD->NGN rate:', fallback)
+    this.cache.set(cacheKey, { rate: fallback, timestamp: Date.now() })
+    return fallback
   }
 
   /**

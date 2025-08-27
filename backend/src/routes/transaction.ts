@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express';
 import { Transaction } from '../models/Transaction';
 import { authenticateToken } from '../middleware/auth';
 import { exchangeRateService } from '../services/exchangeRateService';
+import { coingeckoService } from '../services/coingeckoService';
+import { starknetService } from '../services/starknetService';
+import { getTokenConfig } from '../lib/constants';
 
 const router = Router();
 
@@ -288,8 +291,31 @@ router.get('/summary', authenticateToken, async (req: Request, res: Response) =>
       stats.averageTransactionNGN = (stats.totalReceivedNGN + stats.totalWithdrawnNGN) / stats.totalTransactions;
     }
 
-    // Get current exchange rate
+    // Prices and FX via RPC balances + CoinGecko
     const exchangeRate = await exchangeRateService.getUSDToNGNRate();
+    let strkUsdPrice = 0
+    let usdcUsdValue = 0
+    let strkUsdValue = 0
+    let totalStrkFormatted = 0
+    try {
+      const wallet = (req.user.cavosWalletAddress || '').toLowerCase()
+      if (wallet) {
+        const usdc = getTokenConfig('USDC')
+        const strk = getTokenConfig('STRK')
+
+        const [usdcBal, strkBal] = await Promise.all([
+          starknetService.getErc20Balance(wallet, usdc.address, usdc.decimals),
+          starknetService.getErc20Balance(wallet, strk.address, strk.decimals)
+        ])
+        const usdcFormatted = Number(usdcBal.formatted || '0')
+        const strkFormatted = Number(strkBal.formatted || '0')
+        usdcUsdValue = isNaN(usdcFormatted) ? 0 : usdcFormatted // 1 USDC = 1 USD
+        totalStrkFormatted = isNaN(strkFormatted) ? 0 : strkFormatted
+      }
+
+      try { strkUsdPrice = await coingeckoService.getSimplePrice(process.env.STRK_COINGECKO_ID || 'starknet', 'usd') } catch {}
+      if (strkUsdPrice > 0 && totalStrkFormatted > 0) { strkUsdValue = totalStrkFormatted * strkUsdPrice }
+    } catch {}
 
     res.json({
       success: true,
@@ -300,9 +326,18 @@ router.get('/summary', authenticateToken, async (req: Request, res: Response) =>
         endDate: new Date(),
         statistics: stats,
         exchangeRate,
+        prices: {
+          STRK_USD: (strkUsdPrice || Number(process.env.STRK_USD_OVERRIDE || '0') || 0)
+        },
         netFlow: {
           USD: stats.totalReceivedUSD - stats.totalWithdrawnUSD,
           NGN: stats.totalReceivedNGN - stats.totalWithdrawnNGN
+        },
+        totals: {
+          USDC_USD: usdcUsdValue,
+          STRK_USD: (strkUsdValue || ((Number(process.env.STRK_USD_OVERRIDE || '0') || 0) * (totalStrkFormatted || 0))),
+          USD: usdcUsdValue + (strkUsdValue || ((Number(process.env.STRK_USD_OVERRIDE || '0') || 0) * (totalStrkFormatted || 0))),
+          NGN: (usdcUsdValue + (strkUsdValue || ((Number(process.env.STRK_USD_OVERRIDE || '0') || 0) * (totalStrkFormatted || 0)))) * exchangeRate
         }
       }
     });

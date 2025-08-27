@@ -6,7 +6,7 @@ export interface IUser {
   email: string;
   name: string;
   phone?: string;
-  cavosWalletAddress: string;
+  cavosWalletAddress?: string;
   starknetNetwork?: 'sepolia' | 'mainnet';
   bankDetails: {
     bankName: string;

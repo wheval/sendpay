@@ -43,7 +43,8 @@ router.post('/login', async (req: Request, res: Response) => {
     let user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
-      const mockCavosWallet = `0x${Math.random().toString(16).substring(2, 34)}`;
+      // Generate a proper 40-character Ethereum address (excluding 0x prefix)
+      const mockCavosWallet = `0x${Array.from({length: 40}, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
       
       user = new User({
         email: email.toLowerCase(),

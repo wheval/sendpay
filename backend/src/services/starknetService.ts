@@ -1,4 +1,4 @@
-import { RpcProvider, Account, Contract, cairo, uint256 } from 'starknet';
+import { RpcProvider, Account, Contract, cairo, uint256, CallData } from 'starknet';
 import { IStarknetConfig, IStarknetTransaction } from '../types';
 
 class StarknetService {
@@ -42,32 +42,41 @@ class StarknetService {
   }
 
   /**
+   * Fallback ERC20 balance call using RPC directly.
+   */
+  public async getErc20Balance(accountAddress: string, tokenAddress: string, decimals: string | number = 18): Promise<{ balance: string; formatted: string }> {
+    const addr = accountAddress.toLowerCase()
+    const token = tokenAddress.toLowerCase()
+    const dec = Number(decimals || 18)
+
+    const calldata = [addr]
+    const res = await this.provider.callContract({
+      contractAddress: token,
+      entrypoint: 'balanceOf',
+      calldata
+    })
+
+    // Expect Uint256 { low, high }
+    const [lowStr = '0x0', highStr = '0x0'] = res.result || []
+    const low = BigInt(lowStr)
+    const high = BigInt(highStr)
+    const value = (high << 128n) + low
+    const denom = BigInt(10) ** BigInt(dec)
+    const formatted = Number(value) / Number(denom)
+
+    return { balance: value.toString(), formatted: formatted.toString() }
+  }
+
+  /**
    * Get USDC balance for a wallet address
    */
   async getUSDCBalance(walletAddress: string): Promise<number> {
     try {
-      // USDC contract ABI for balanceOf function
-      const usdcContract = new Contract(
-        [
-          {
-            name: 'balanceOf',
-            type: 'function',
-            inputs: [{ name: 'account', type: 'felt' }],
-            outputs: [{ name: 'balance', type: 'Uint256' }],
-            state_mutability: 'view'
-          }
-        ],
-        this.config.usdcTokenAddress,
-        this.provider
-      );
-
-      const result = await usdcContract.balanceOf(walletAddress);
-      const balance = uint256.uint256ToBN(result.balance);
-      
-      // USDC has 6 decimal places
-      return Number(balance) / 1e6;
+      const tokenAddress = this.config.usdcTokenAddress
+      const { formatted } = await this.getErc20Balance(walletAddress, tokenAddress, 6)
+      return Number(formatted || '0') || 0
     } catch (error) {
-      console.error('Error getting USDC balance:', error);
+      console.warn('Error getting USDC balance:', (error as any)?.message || error)
       return 0;
     }
   }
@@ -77,25 +86,10 @@ class StarknetService {
    */
   async getTokenBalance(walletAddress: string, tokenAddress: string, decimals: string = '18'): Promise<number> {
     try {
-      const tokenContract = new Contract(
-        [
-          {
-            name: 'balanceOf',
-            type: 'function',
-            inputs: [{ name: 'account', type: 'felt' }],
-            outputs: [{ name: 'balance', type: 'Uint256' }],
-            state_mutability: 'view'
-          }
-        ],
-        tokenAddress,
-        this.provider
-      );
-      const result = await tokenContract.balanceOf(walletAddress);
-      const balance = uint256.uint256ToBN(result.balance);
-      const dec = Number(decimals || '18');
-      return Number(balance) / Math.pow(10, dec);
+      const { formatted } = await this.getErc20Balance(walletAddress, tokenAddress, decimals)
+      return Number(formatted || '0') || 0
     } catch (error) {
-      console.error('Error getting token balance:', error);
+      console.warn('Error getting token balance:', (error as any)?.message || error)
       return 0;
     }
   }
