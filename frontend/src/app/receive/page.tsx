@@ -115,7 +115,7 @@ export default function ReceivePage() {
   if (paymentRequest) {
     return (
       <div className="min-h-screen bg-background">
-        <Navigation />
+        <Navigation landing={false} />
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <Button 
             variant="ghost" 
@@ -247,7 +247,7 @@ export default function ReceivePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navigation />
+      <Navigation landing={false} />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="max-w-2xl mx-auto">
           <div className="mb-8">

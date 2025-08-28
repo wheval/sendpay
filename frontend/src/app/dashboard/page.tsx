@@ -189,7 +189,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
-        <Navigation />
+        <Navigation landing={false} />
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="mb-6">
             <div className="h-8 w-40 bg-muted rounded animate-pulse" />
@@ -266,7 +266,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navigation />
+      <Navigation landing={false} />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-3">

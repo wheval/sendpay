@@ -194,7 +194,7 @@ export default function WithdrawPage() {
   if (withdrawalRequest) {
     return (
       <div className="min-h-screen bg-background">
-        <Navigation />
+        <Navigation landing={false} />
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <Button 
             variant="ghost" 
@@ -309,7 +309,7 @@ export default function WithdrawPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Navigation />
+      <Navigation landing={false} />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="mx-auto">
           <div className="mb-8">

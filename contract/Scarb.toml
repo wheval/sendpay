@@ -1,0 +1,18 @@
+[package]
+name = "sendpay"
+version = "0.1.0"
+edition = "2024_07"
+
+[dependencies]
+starknet = "2.11.4"
+openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v0.9.0" }
+
+[[target.starknet]]
+sierra = true
+casm = true
+
+[lib]
+cairo-type-scripts = true
+
+[tool.scarb]
+allow-prebuilt-plugins = ["snforge_std"]
