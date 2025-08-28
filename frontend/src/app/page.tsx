@@ -6,35 +6,43 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ArrowRight, Shield, Zap, Globe, Smartphone } from "lucide-react"
 import { SiZebpay } from "react-icons/si"
 import Link from "next/link"
+import Silk from "@/components/SilkBg"
 
 export default function HomePage() {
-  return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-      
-      {/* Hero Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
-        <div className="container mx-auto text-center">
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
-            Send & Receive Money
-            <span className="text-primary block">Instantly</span>
-          </h1>
-          <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-            SendPay makes it easy to send and receive money globally. Fast, secure, and reliable money transfers at your fingertips.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button asChild size="lg" className="text-lg px-8 py-6">
-              <Link href="/login">
-                Get Started
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Link>
-            </Button>
-            <Button variant="outline" size="lg" className="text-lg px-8 py-6">
-              <Link href="/receive">Receive Money</Link>
-            </Button>
-          </div>
-        </div>
-      </section>
+	return (
+		<div className="bg-background flex flex-col">
+			{/* Hero Section */}
+			<section className="relative min-h-screen">
+				<Navigation landing />
+				<div className="absolute h-full w-full top-0 left-0 dark:opacity-40 opacity-30 dark:blur-sm blur-0">
+					<Silk color="#FFFFFF" />
+					{/* <p>Hello world</p> */}
+				</div>
+
+				<div className="relative z-10 top-40 left-0 py-20 px-4 sm:px-6 lg:px-8 h-full w-full">
+					<div className="container mx-auto text-center">
+						<h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
+							Send & Receive Money
+							<span className="text-primary block">Instantly</span>
+						</h1>
+						<p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
+							SendPay makes it easy to send and receive money globally. Fast,
+							secure, and reliable money transfers at your fingertips.
+						</p>
+						<div className="flex flex-col sm:flex-row gap-4 justify-center">
+							<Button asChild size="lg" className="text-lg px-8 py-6">
+								<Link href="/login">
+									Get Started
+									<ArrowRight className="ml-2 h-5 w-5" />
+								</Link>
+							</Button>
+							<Button variant="outline" size="lg" className="text-lg px-8 py-6">
+								<Link href="/receive">Receive Money</Link>
+							</Button>
+						</div>
+					</div>
+				</div>
+			</section>
 
       {/* Features Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-muted/30">

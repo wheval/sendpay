@@ -7,7 +7,7 @@ import { Toaster } from "@/components/ui/toaster"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "SendPay - Send & Receive Money Instantly",
+  title: "SendPay - STRK/USDT to NAIRA in minutes",
   description: "Fast, secure, and reliable money transfers at your fingertips.",
 }
 
