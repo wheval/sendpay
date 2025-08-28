@@ -5,14 +5,27 @@ edition = "2024_07"
 
 [dependencies]
 starknet = "2.11.4"
-openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v0.9.0" }
+openzeppelin = "2.0.0"
 
-[[target.starknet]]
+[dev-dependencies]
+snforge_std = "0.39.0"
+assert_macros = "2.11.4"
+
+[[target.starknet-contract]]
 sierra = true
-casm = true
 
 [lib]
 cairo-type-scripts = true
 
 [tool.scarb]
 allow-prebuilt-plugins = ["snforge_std"]
+
+[tool.cairo]
+plugins = ["starknet_macros"]
+
+[scripts]
+test = "snforge test"
+
+[tool.snforge]
+# Make sure it's pointing to the right test folder, usually:
+test-path = "tests"
