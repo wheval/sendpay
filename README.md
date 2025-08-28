@@ -5,7 +5,7 @@ A full-stack payment application built with Next.js, Node.js, and Cairo smart co
 ## 📋 Project Overview
 
 SendPay is an MVP payment platform that allows users to:
-- **Send & Receive Money** - Create payment requests and share them with others
+- **STRK/USDC to NAIRA in minutes** - Fast crypto-to-fiat conversion
 - **Manage Digital Wallets** - Integrated with Cavos SDK for Starknet wallet creation
 - **Withdraw to Bank** - Convert digital assets to fiat currency via bank transfers
 - **Track Transactions** - Complete history of all payment activities
@@ -225,6 +225,16 @@ npm test
 - [x] Responsive UI with shadcn/ui
 - [x] Cookie-based authentication
 - [x] Error handling & user feedback
+- [x] **Mobile-optimized navigation with hamburger menu**
+- [x] **Updated hero copy: "STRK/USDC to NAIRA in minutes"**
+- [x] **Production deployment ready**
+
+### **🚀 Deployment Status**
+- [x] **Backend deployed to Render** - Production ready
+- [x] **Frontend deployed to Vercel** - Ready for deployment
+- [x] **Environment variables configured** for production
+- [x] **CORS and port handling** optimized for cloud deployment
+- [x] **Health check endpoint** at `/health`
 
 ### **🔄 In Progress**
 - [ ] Smart contract integration
@@ -277,28 +287,58 @@ npm test
 - `POST /api/starknet/withdraw` - Process withdrawal
 - `GET /api/starknet/network-info` - Network information
 
-## 🚀 Deployment
+## �� Deployment
 
-### **Backend Deployment**
+### **✅ Production Deployment Ready**
+
+#### **Backend (Render)**
+- **Status**: ✅ Production ready
+- **Build Command**: `npm run build`
+- **Start Command**: `npm start`
+- **Environment**: Production with MongoDB Atlas
+
+#### **Frontend (Vercel)**
+- **Status**: Ready for deployment
+- **Build Command**: `npm run build`
+- **Environment Variable**: `NEXT_PUBLIC_API_BASE=https://your-backend-url/api`
+
+### **Environment Variables for Production**
+
+#### **Backend (Render)**
+```bash
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/sendpay
+JWT_SECRET=your_jwt_secret
+NODE_ENV=production
+FRONTEND_URL=https://your-vercel-domain.vercel.app
+```
+
+#### **Frontend (Vercel)**
+```bash
+NEXT_PUBLIC_API_BASE=https://your-backend-url/api
+```
+
+### **Deployment Commands**
+
+#### **Backend**
 ```bash
 cd backend
 npm run build
 npm start
 ```
 
-### **Frontend Deployment**
+#### **Frontend**
 ```bash
 cd frontend
 npm run build
 npm start
 ```
 
-### **Environment Setup**
-- Set production environment variables
-- Configure MongoDB Atlas for production
-- Update Cavos network to mainnet
-- Set up SSL certificates
-- Configure domain and DNS
+### **Recent Updates**
+- ✅ **Mobile Navigation**: Added Logout button to hamburger dropdown
+- ✅ **Hero Copy**: Updated to "STRK/USDC to NAIRA in minutes"
+- ✅ **Production Logging**: Backend now logs correct public URLs
+- ✅ **Environment Handling**: Proper production vs development configs
+- ✅ **Production Ready**: Backend and frontend ready for deployment
 
 ## 🤝 Contributing
 

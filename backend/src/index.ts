@@ -17,11 +17,26 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: true,
+  origin: [
+    'http://localhost:3000',
+    'https://sendpay-five.vercel.app',
+    'https://sendpay.vercel.app'
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
+
+// Add explicit CORS headers for preflight requests
+app.options('*', cors());
+
+// Debug middleware to log CORS issues
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -64,6 +79,12 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
 
 // 404 handler
 app.use('*', (req, res) => {
+  // Ensure CORS headers are set even for 404s
+  res.header('Access-Control-Allow-Origin', 'https://sendpay-five.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Origin, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   res.status(404).json({ error: 'Route not found' });
 });
 
