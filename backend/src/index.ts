@@ -71,7 +71,9 @@ app.use('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 SendPay Backend API running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  const externalUrl = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || '';
+  const healthUrl = externalUrl ? `${externalUrl}/health` : `http://localhost:${PORT}/health`;
+  console.log(`🔗 Health check: ${healthUrl}`);
 });
 
 export default app;

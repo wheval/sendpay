@@ -7,6 +7,7 @@ import { Moon, Sun, Menu, X } from "lucide-react";
 import { SiZebpay } from "react-icons/si";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
+import { cookies } from "@/lib/cookies";
 
 interface Navigation {
 	landing: boolean;
@@ -37,6 +38,16 @@ export default function Navigation({ landing }: Navigation) {
 		{ href: "/withdraw", label: "Withdraw" },
 		{ href: "/history", label: "History" },
 	];
+
+	const handleLogout = () => {
+		try {
+			localStorage.clear();
+			cookies.removeMultiple(['jwt', 'accessToken', 'refreshToken', 'walletAddress', 'user']);
+			router.push('/login');
+		} finally {
+			setIsMenuOpen(false);
+		}
+	};
 
 	if (!mounted) {
 		return null;
@@ -129,6 +140,15 @@ export default function Navigation({ landing }: Navigation) {
 									{item.label}
 								</Link>
 							))}
+							<div className="px-4">
+								<Button 
+									variant="outline" 
+									className="w-full"
+									onClick={handleLogout}
+								>
+									Logout
+								</Button>
+							</div>
 						</div>
 					</div>
 				)}
