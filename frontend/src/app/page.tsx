@@ -28,12 +28,11 @@ export default function HomePage() {
 				<div className="relative z-10 top-40 left-0 py-20 px-4 sm:px-6 lg:px-8 h-full w-full">
 					<div className="container mx-auto text-center">
 						<h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
-							Send & Receive Money
-							<span className="text-primary block">Instantly</span>
+							STRK/USDC to NAIRA
+							<span className="text-primary block">in minutes</span>
 						</h1>
 						<p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-							SendPay makes it easy to send and receive money globally. Fast,
-							secure, and reliable money transfers at your fingertips.
+							Swap and cash out fast. Secure payouts straight to your Nigerian bank.
 						</p>
 						<div className="flex flex-col sm:flex-row gap-4 justify-center">
 							<Button asChild size="lg" className="text-lg px-8 py-6">
