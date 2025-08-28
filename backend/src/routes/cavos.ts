@@ -1,187 +1,138 @@
-import express, { Request, Response } from 'express';
-import { cavosService } from '../services/cavosService';
+import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
+import paystackService from '../services/paystackService';
+import { BankAccount } from '../models/BankAccount';
+import { Withdrawal } from '../models/Withdrawal';
 import { User } from '../models/User';
-import { generateToken } from '../middleware/auth';
-import { starknetService } from '../services/starknetService';
 
-const router = express.Router();
+const router = Router();
 
-// POST /api/cavos/signup
-router.post('/signup', async (req: Request, res: Response) => {
+/**
+ * @route   GET /api/cavos/banks
+ * @desc    Get list of supported banks from Paystack
+ * @access  Private
+ */
+router.get('/banks', authenticateToken, async (req, res) => {
   try {
-    const { email, password } = req.body as { email: string; password: string };
-    if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'Email and password are required' });
-    }
-    const result = await cavosService.signUp(email, password);
+    const banks = await paystackService.getBankList();
+    res.json({ success: true, data: banks });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+});
 
-    // Upsert local user and issue our JWT
-    const walletAddress = result.wallet?.address || '';
-    let user = await User.findOne({ email: email.toLowerCase() });
+/**
+ * @route   POST /api/cavos/bank/add
+ * @desc    Add and verify a bank account
+ * @access  Private
+ */
+router.post('/bank/add', authenticateToken, async (req, res) => {
+  const { accountNumber, bankCode } = req.body;
+  const userId = req.user._id;
+
+  if (!accountNumber || !bankCode) {
+    return res.status(400).json({ success: false, message: 'Account number and bank code are required' });
+  }
+
+  try {
+    // Verify account details with Paystack
+    const verification = await paystackService.verifyAccountNumber(accountNumber, bankCode);
+    if (!verification.status) {
+      return res.status(400).json({ success: false, message: verification.message });
+    }
+
+    const { account_name } = verification.data;
+
+    // Get bank name from the bank list
+    const banks = await paystackService.getBankList();
+    const bank = banks.find(b => b.code === bankCode);
+    const bankName = bank ? bank.name : 'Unknown Bank';
+
+    // Create transfer recipient on Paystack
+    const recipient = await paystackService.createTransferRecipient(account_name, accountNumber, bankCode);
+    if (!recipient.status) {
+      return res.status(400).json({ success: false, message: recipient.message });
+    }
+
+    // Save bank account to database
+    const bankAccount = new BankAccount({
+      userId,
+      accountNumber,
+      bankCode,
+      accountName: account_name,
+      bankName,
+      recipientCode: recipient.data.recipient_code,
+    });
+
+    await bankAccount.save();
+
+    res.json({ success: true, message: 'Bank account added successfully', data: bankAccount });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+});
+
+/**
+ * @route   POST /api/cavos/withdraw
+ * @desc    Initiate a withdrawal to a bank account
+ * @access  Private
+ */
+router.post('/withdraw', authenticateToken, async (req, res) => {
+  const { amount, bankAccountId } = req.body;
+  const userId = req.user._id;
+
+  if (!amount || !bankAccountId) {
+    return res.status(400).json({ success: false, message: 'Amount and bank account ID are required' });
+  }
+
+  try {
+    const user = await User.findById(userId);
     if (!user) {
-      user = new User({
-        email: email.toLowerCase(),
-        name: email.split('@')[0],
-        cavosWalletAddress: walletAddress || undefined, // Only set if available
-        bankDetails: { bankName: 'Not Set', accountNumber: 'Not Set', accountName: 'Not Set' },
-        balanceUSD: 0,
-        balanceNGN: 0
-      });
-      await user.save();
-    } else {
-      if (!user.cavosWalletAddress && walletAddress) {
-        user.cavosWalletAddress = walletAddress;
-        await user.save();
-      }
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const token = generateToken((user._id as unknown as { toString: () => string })?.toString() || '');
-
-    const hasBankDetails = !!(user.bankDetails && user.bankDetails.bankName !== 'Not Set' && user.bankDetails.accountNumber !== 'Not Set' && user.bankDetails.accountName !== 'Not Set');
-    const hasWallet = !!user.cavosWalletAddress;
-
-    res.json({ success: true, data: result, token, user: {
-      id: user._id,
-      email: user.email,
-      name: user.name,
-      cavosWalletAddress: user.cavosWalletAddress,
-      balanceUSD: user.balanceUSD,
-      balanceNGN: user.balanceNGN,
-      hasBankDetails,
-      hasWallet
-    }});
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ success: false, message: 'Signup failed', error: message });
-  }
-});
-
-// POST /api/cavos/login
-router.post('/login', async (req: Request, res: Response) => {
-  try {
-    const { email, password } = req.body as { email: string; password: string };
-    if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'Email and password are required' });
-    }
-    const result = await cavosService.signIn(email, password);
-
-    // Upsert local user and issue our JWT
-    const walletAddress = result.wallet?.address || '';
-    let user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
-      user = new User({
-        email: email.toLowerCase(),
-        name: email.split('@')[0],
-        cavosWalletAddress: walletAddress || undefined, // Only set if available
-        bankDetails: { bankName: 'Not Set', accountNumber: 'Not Set', accountName: 'Not Set' },
-        balanceUSD: 0,
-        balanceNGN: 0
-      });
-      await user.save();
-    } else {
-      if (!user.cavosWalletAddress && walletAddress) {
-        user.cavosWalletAddress = walletAddress;
-        await user.save();
-      }
-    }
-    const token = generateToken((user._id as unknown as { toString: () => string })?.toString() || '');
-
-    const hasBankDetails = !!(user.bankDetails && user.bankDetails.bankName !== 'Not Set' && user.bankDetails.accountNumber !== 'Not Set' && user.bankDetails.accountName !== 'Not Set');
-    const hasWallet = !!user.cavosWalletAddress;
-
-    res.json({ success: true, data: result, token, user: {
-      id: user._id,
-      email: user.email,
-      name: user.name,
-      cavosWalletAddress: user.cavosWalletAddress,
-      balanceUSD: user.balanceUSD,
-      balanceNGN: user.balanceNGN,
-      hasBankDetails,
-      hasWallet
-    }});
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ success: false, message: 'Login failed', error: message });
-  }
-});
-
-// POST /api/cavos/refresh
-router.post('/refresh', async (req: Request, res: Response) => {
-  try {
-    const { refreshToken } = req.body as { refreshToken: string };
-    if (!refreshToken) {
-      return res.status(400).json({ success: false, message: 'refreshToken is required' });
-    }
-    const result = await cavosService.refreshToken(refreshToken);
-    res.json({ success: true, data: result });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ success: false, message: 'Token refresh failed', error: message });
-  }
-});
-
-// GET /api/cavos/balance/:address?tokenAddress=...&decimals=18
-router.get('/balance/:address', authenticateToken, async (req: Request, res: Response) => {
-  try {
-    const { address } = req.params;
-    const { tokenAddress, decimals = '18' } = req.query as { tokenAddress: string; decimals?: string };
-    if (!tokenAddress) {
-      return res.status(400).json({ success: false, message: 'tokenAddress is required' });
-    }
-    const result = await cavosService.getBalance(address, tokenAddress, decimals);
-
-    // Persist wallet address if user record is missing it
-    if (req.user && !req.user.cavosWalletAddress && address) {
-      const u = await User.findById(req.user._id);
-      if (u && !u.cavosWalletAddress) {
-        u.cavosWalletAddress = address.toLowerCase();
-        await u.save();
-      }
+    // Check if user has sufficient balance (assuming balance is in a field named 'balance')
+    if (user.balance < amount) {
+      return res.status(400).json({ success: false, message: 'Insufficient balance' });
     }
 
-    // RPC fallback for any token if Cavos returns 0
-    let data = result
-    const zeroLike = (!result?.balance && !Number(result?.formatted)) || (String(result?.formatted) === '0')
-    if (zeroLike) {
-      try {
-        const fallback = await starknetService.getErc20Balance(address, tokenAddress, String(decimals || '18'))
-        data = { balance: Number(fallback.balance) || 0, formatted: fallback.formatted }
-      } catch {}
+    const bankAccount = await BankAccount.findOne({ _id: bankAccountId, userId });
+    if (!bankAccount) {
+      return res.status(404).json({ success: false, message: 'Bank account not found' });
     }
 
-    res.json({ success: true, data });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ success: false, message: 'Balance check failed', error: message });
-  }
-});
+    // Initiate transfer with Paystack
+    const reason = `Withdrawal for user ${userId}`;
+    const transfer = await paystackService.initiateTransfer(bankAccount.recipientCode, amount, reason);
 
-// POST /api/cavos/execute
-router.post('/execute', authenticateToken, async (req: Request, res: Response) => {
-  try {
-    const { address, calls, accessToken } = req.body as { address: string; calls: unknown[]; accessToken: string };
-    if (!address || !Array.isArray(calls) || !accessToken) {
-      return res.status(400).json({ success: false, message: 'address, calls, accessToken are required' });
-    }
-    const result = await cavosService.execute(address, calls, accessToken);
-
-    // Persist wallet address if user record is missing it
-    if (req.user && !req.user.cavosWalletAddress && address) {
-      const u = await User.findById(req.user._id);
-      if (u && !u.cavosWalletAddress) {
-        u.cavosWalletAddress = address;
-        await u.save();
-      }
+    if (!transfer.status) {
+      return res.status(400).json({ success: false, message: transfer.message });
     }
 
-    res.json({ success: true, data: result });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ success: false, message: 'Execute failed', error: message });
+    // Deduct amount from user balance
+    user.balance -= amount;
+    await user.save();
+
+    // Create withdrawal record
+    const withdrawal = new Withdrawal({
+      userId,
+      amount,
+      bankAccountId,
+      status: 'processing',
+      reference: transfer.data.transfer_code,
+    });
+
+    await withdrawal.save();
+
+    res.json({ success: true, message: 'Withdrawal initiated successfully', data: withdrawal });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Server Error' });
   }
 });
 
 export { router as cavosRoutes };
-
-
