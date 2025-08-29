@@ -118,6 +118,8 @@ export interface IBankAccount {
   bankName: string;
   accountNumber: string;
   accountName: string;
+  bankCode: string;
+  recipientCode?: string;
   isDefault: boolean;
   createdAt?: Date;
   updatedAt?: Date;
@@ -163,6 +165,8 @@ export interface IBankAccountDocument extends Document {
   bankName: string;
   accountNumber: string;
   accountName: string;
+  bankCode: string;
+  recipientCode?: string;
   isDefault: boolean;
   createdAt?: Date;
   updatedAt?: Date;

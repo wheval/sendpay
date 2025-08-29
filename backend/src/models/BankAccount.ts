@@ -46,10 +46,11 @@ BankAccountSchema.index({ isDefault: 1 });
 
 // Ensure only one default account per user
 BankAccountSchema.pre('save', async function(next) {
-  if (this.isDefault) {
+  const doc = this as IBankAccountDocument;
+  if (doc.isDefault) {
     // Remove default flag from other accounts
     await mongoose.model('BankAccount').updateMany(
-      { userId: this.userId, _id: { $ne: this._id } },
+      { userId: doc.userId, _id: { $ne: doc._id } },
       { isDefault: false }
     );
   }
@@ -58,7 +59,8 @@ BankAccountSchema.pre('save', async function(next) {
 
 // Virtual for masked account number
 BankAccountSchema.virtual('maskedAccountNumber').get(function() {
-  const accountNumber = this.accountNumber;
+  const doc = this as IBankAccountDocument;
+  const accountNumber = doc.accountNumber;
   if (accountNumber.length <= 4) return accountNumber;
   return `${accountNumber.slice(0, 4)}****${accountNumber.slice(-4)}`;
 });

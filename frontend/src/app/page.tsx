@@ -12,7 +12,7 @@ import {
 import { ArrowRight, Shield, Zap, Globe, Smartphone } from "lucide-react";
 import { SiZebpay } from "react-icons/si";
 import Link from "next/link";
-import Silk from "@/components/SilkBg";
+// import Silk from "@/components/SilkBg";
 
 export default function HomePage() {
 	return (
@@ -20,10 +20,9 @@ export default function HomePage() {
 			{/* Hero Section */}
 			<section className="relative min-h-screen">
 				<Navigation landing />
-				<div className="absolute h-full w-full top-0 left-0 dark:opacity-40 opacity-30 dark:blur-sm blur-0">
+				{/* <div className="absolute h-full w-full top-0 left-0 dark:opacity-40 opacity-30 dark:blur-sm blur-0">
 					<Silk color="#FFFFFF" />
-					{/* <p>Hello world</p> */}
-				</div>
+				</div> */}
 
 				<div className="relative z-10 top-40 left-0 py-20 px-4 sm:px-6 lg:px-8 h-full w-full">
 					<div className="container mx-auto text-center">

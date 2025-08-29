@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { Moon, Sun, Menu, X } from "lucide-react";
-import { SiZebpay } from "react-icons/si";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { cookies } from "@/lib/cookies";
@@ -69,7 +68,6 @@ export default function Navigation({ landing }: Navigation) {
 							href="/"
 							className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
 						>
-							<SiZebpay className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
 							<span className="text-lg sm:text-xl font-bold truncate">
 								SendPay
 							</span>
