@@ -4,10 +4,10 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { Moon, Sun, Menu, X } from "lucide-react";
-import { SiZebpay } from "react-icons/si";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { cookies } from "@/lib/cookies";
+import { LogoIcon } from "@/icons/logo-icon";
 
 interface Navigation {
 	landing: boolean;
@@ -16,12 +16,22 @@ interface Navigation {
 export default function Navigation({ landing }: Navigation) {
 	const [mounted, setMounted] = useState(false);
 	const [isMenuOpen, setIsMenuOpen] = useState(false);
+	const [isLoggedIn, setIsLoggedIn] = useState(false);
 	const { theme, setTheme } = useTheme();
 	const router = useRouter();
 	const pathname = usePathname();
 
 	useEffect(() => {
 		setMounted(true);
+		// Check if user is logged in
+		const checkAuthStatus = () => {
+			const jwt = cookies.get('jwt');
+			const accessToken = cookies.get('accessToken');
+			const user = cookies.get('user');
+			setIsLoggedIn(!!(jwt || accessToken || user));
+		};
+		
+		checkAuthStatus();
 	}, []);
 
 	const toggleTheme = () => {
@@ -54,7 +64,7 @@ export default function Navigation({ landing }: Navigation) {
 	}
 
 	const landingStyle = landing
-		? " z-20 md:w-[80%] absolute left-[50%] -translate-x-[50%]  rounded-3xl top-10 "
+		? " z-20 md:w-[80%] sticky left-0 right-0 mx-auto rounded-3xl top-5 "
 		: "";
 
 	return (
@@ -67,43 +77,64 @@ export default function Navigation({ landing }: Navigation) {
 					<div className="flex items-center space-x-2 min-w-0 flex-shrink-0">
 						<Link
 							href="/"
-							className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
+							className="flex items-center space-x-1 hover:opacity-80 transition-opacity"
 						>
-							<SiZebpay className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
-							<span className="text-lg sm:text-xl font-bold truncate">
+							<LogoIcon color={theme === "light" ? "#6939FD" : "#F9F9F9"} />
+							<span className="text-lg sm:text-xl truncate">
 								SendPay
 							</span>
 						</Link>
 					</div>
 
 					{/* Desktop Navigation */}
-					<div className="hidden md:flex items-center space-x-6 flex-shrink-0">
-						{navItems.map((item) => (
-							<Link
-								key={item.href}
-								href={item.href}
-								className={`text-sm font-medium transition-colors hover:text-primary whitespace-nowrap ${
-									isActive(item.href) ? "text-primary" : "text-muted-foreground"
-								}`}
-							>
-								{item.label}
-							</Link>
-						))}
-					</div>
+					{isLoggedIn && (
+						<div className="hidden md:flex items-center space-x-6 flex-shrink-0">
+							{navItems.map((item) => (
+								<Link
+									key={item.href}
+									href={item.href}
+									className={`text-sm font-medium transition-colors hover:text-primary whitespace-nowrap ${
+										isActive(item.href) ? "text-primary" : "text-muted-foreground"
+									}`}
+								>
+									{item.label}
+								</Link>
+							))}
+						</div>
+					)}
 
-					{/* Right side - Theme toggle and mobile menu */}
+					{/* Right side - Theme toggle, login/logout, and mobile menu */}
 					<div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
 						{/* Theme Toggle */}
-						<Button
-							variant="ghost"
-							size="sm"
+						<button
 							onClick={toggleTheme}
-							className="h-8 w-8 sm:h-9 sm:w-9 px-0"
+							className="h-8 w-8 sm:h-9 sm:w-9 p-0 rounded-md transition-colors flex items-center justify-center"
 						>
 							<Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
 							<Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
 							<span className="sr-only">Toggle theme</span>
-						</Button>
+						</button>
+
+						{/* Login/Logout Button */}
+						{isLoggedIn ? (
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={handleLogout}
+								className="hidden sm:flex"
+							>
+								Logout
+							</Button>
+						) : (
+							<Button
+								variant="default"
+								size="sm"
+								onClick={() => router.push('/login')}
+								className="hidden sm:flex"
+							>
+								Login
+							</Button>
+						)}
 
 						{/* Mobile menu button */}
 						<Button
@@ -123,7 +154,7 @@ export default function Navigation({ landing }: Navigation) {
 				</div>
 
 				{/* Mobile Navigation */}
-				{isMenuOpen && (
+				{isMenuOpen && isLoggedIn && (
 					<div className="md:hidden border-t">
 						<div className="py-4 space-y-2">
 							{navItems.map((item) => (

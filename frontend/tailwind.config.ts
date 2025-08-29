@@ -8,6 +8,9 @@ const config: Config = {
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
+    fontFamily: {
+      sans: ["Manrope", "sans-serif"],
+    },
     container: {
       center: true,
       padding: "2rem",
@@ -41,6 +44,7 @@ const config: Config = {
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
+          hover: "hsl(var(--accent-hover))",
         },
         popover: {
           DEFAULT: "hsl(var(--popover))",
@@ -49,6 +53,11 @@ const config: Config = {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        custom: {
+          background: "hsl(var(--background))",
+          foreground: "hsl(var(--foreground))",
+          accent: "hsl(var(--accent))",
         },
       },
       borderRadius: {
