@@ -1,13 +1,13 @@
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { Manrope } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 
-const inter = Inter({ subsets: ["latin"] })
+const manrope = Manrope({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "SendPay - STRK/USDT to NAIRA in minutes",
+  title: "SendPay - Crypto in. Cash out Instantly",
   description: "Fast, secure, and reliable money transfers at your fingertips.",
 }
 
@@ -18,7 +18,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={manrope.className}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
