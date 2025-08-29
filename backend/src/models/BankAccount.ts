@@ -22,6 +22,15 @@ const BankAccountSchema = new Schema<IBankAccountDocument>({
     required: true,
     trim: true
   },
+  bankCode: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  recipientCode: {
+    type: String,
+    trim: true
+  },
   isDefault: {
     type: Boolean,
     default: false
