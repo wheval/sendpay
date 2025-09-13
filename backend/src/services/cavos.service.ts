@@ -1,5 +1,6 @@
 import { CavosAuth, executeCalls } from 'cavos-service-sdk';
-import { starknetService } from './starknetService';
+import { apibaraService } from './apibara.service';
+import { starknetService } from './starknet.service';
 
 export interface CavosConfig {
   network: 'sepolia' | 'mainnet' | string;
@@ -63,8 +64,22 @@ class CavosService {
   }
 
   async getBalance(address: string, tokenAddress: string, decimals = '18') {
-    const result = await starknetService.getTokenBalance(address, tokenAddress, decimals);
-    return { balance: result, formatted: String(result) };
+    try {
+      // Use Apibara service for better balance checking
+      const balance = await apibaraService.getTokenBalance(address, tokenAddress);
+      const formattedBalance = parseFloat(balance) / Math.pow(10, parseInt(decimals));
+      
+      return { 
+        balance: balance, 
+        formatted: formattedBalance.toFixed(parseInt(decimals)) 
+      };
+    } catch (error) {
+      console.error('Apibara balance check failed, falling back to Starknet service:', error);
+      
+      // Fallback to starknet service if Apibara fails
+      const result = await starknetService.getTokenBalance(address, tokenAddress, decimals);
+      return { balance: result, formatted: String(result) };
+    }
   }
 
   async execute(address: string, calls: any[], accessToken: string) {

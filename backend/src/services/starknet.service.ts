@@ -1,5 +1,6 @@
 import { RpcProvider, Account, Contract, cairo, uint256, CallData } from 'starknet';
 import { IStarknetConfig, IStarknetTransaction } from '../types';
+import { SENDPAY_ABI } from '../lib/sendpay_abi';
 
 class StarknetService {
   private provider: RpcProvider;
@@ -27,10 +28,8 @@ class StarknetService {
   private async initializeContract() {
     try {
       if (this.config.contractAddress !== '0x0') {
-        // Contract ABI would be imported here
-        // For now, we'll create a basic contract instance
         this.contract = new Contract(
-          [], // ABI would go here
+          SENDPAY_ABI,
           this.config.contractAddress,
           this.provider
         );

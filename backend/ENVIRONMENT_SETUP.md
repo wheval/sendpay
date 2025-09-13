@@ -25,7 +25,7 @@ NODE_ENV=development
 ### Flutterwave Configuration
 ```bash
 FLUTTERWAVE_CLIENT_ID=your_flutterwave_client_id
-FLUTTERWAVE_SECRET_KEY=your_flutterwave_secret_key
+FLUTTERWAVE_CLIENT_SECRET=your_flutterwave_client_secret
 FLUTTERWAVE_ENCRYPTION_KEY=your_flutterwave_encryption_key
 FLUTTERWAVE_CALLBACK_URL=http://localhost:5000/api/flutterwave/webhook
 ```
@@ -37,10 +37,6 @@ SENDPAY_CONTRACT_ADDRESS=0x05adeea982017c957b9671fe1f0870d83b60868d688dca39681b4
 USDC_TESTNET_ADDRESS=0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080
 ```
 
-### Exchange Rate Configuration
-```bash
-USD_NGN_FALLBACK=1400
-```
 
 ### Optional: CoinGecko API
 ```bash

@@ -13,6 +13,7 @@ export interface IUser {
     accountNumber: string;
     accountName: string;
   };
+  balance: number;
   balanceUSD: number;
   balanceNGN: number;
   createdAt?: Date;
@@ -34,6 +35,7 @@ export interface ITransaction {
     bankName: string;
     accountNumber: string;
   };
+  metadata?: Record<string, any>;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -137,6 +139,7 @@ export interface IUserDocument extends Document {
     accountNumber: string;
     accountName: string;
   };
+  balance: number;
   balanceUSD: number;
   balanceNGN: number;
   createdAt?: Date;
@@ -156,6 +159,7 @@ export interface ITransactionDocument extends Document {
     bankName: string;
     accountNumber: string;
   };
+  metadata?: Record<string, any>;
   createdAt?: Date;
   updatedAt?: Date;
 }

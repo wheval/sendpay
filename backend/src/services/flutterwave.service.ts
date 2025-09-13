@@ -1,5 +1,13 @@
 import axios from 'axios';
 
+interface FlutterwaveAuthToken {
+  access_token: string;
+  expires_in: number;
+  refresh_token?: string;
+  token_type: string;
+  expiresAt: number;
+}
+
 interface FlutterwavePayoutRequest {
   account_bank: string;
   account_number: string;
@@ -36,18 +44,85 @@ interface FlutterwavePayoutResponse {
 }
 
 export class FlutterwaveService {
-  private secretKey: string;
-  private baseUrl: string;
+  private clientId: string;
+  private clientSecret: string;
+  private baseUrl: string = '';
   private isTestMode: boolean;
+  private currentToken: FlutterwaveAuthToken | null = null;
+  private tokenEndpoint = 'https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token';
 
   constructor() {
-    this.secretKey = process.env.FLUTTERWAVE_SECRET_KEY || '';
-    this.baseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://api.flutterwave.com/v3';
+    this.clientId = process.env.FLUTTERWAVE_CLIENT_ID || '';
+    this.clientSecret = process.env.FLUTTERWAVE_CLIENT_SECRET || '';
     this.isTestMode = process.env.NODE_ENV !== 'production';
     
-    if (!this.secretKey) {
-      console.warn('⚠️ FLUTTERWAVE_SECRET_KEY not set. Payouts will be simulated.');
+    if (this.isTestMode) {
+      this.baseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://api.flutterwave.cloud/developersandbox';
+    } else {
+      this.baseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://api.flutterwave.cloud/f4bexperience';
     }
+
+    if (!this.clientId || !this.clientSecret) {
+      console.warn('⚠️ FLUTTERWAVE_CLIENT_ID or FLUTTERWAVE_CLIENT_SECRET not set.');
+    }
+    
+    // Log configuration for debugging
+    console.log('[fw] Flutterwave service configuration:', {
+      hasClientId: !!this.clientId,
+      hasClientSecret: !!this.clientSecret,
+      isTestMode: this.isTestMode,
+      baseUrl: this.baseUrl
+    });
+  }
+
+  /**
+   * Get a valid access token, refreshing if necessary
+   */
+  private async getAccessToken(): Promise<string | null> {
+    try {
+      // If we have a valid token, return it
+      if (this.currentToken && Date.now() < this.currentToken.expiresAt) {
+        return this.currentToken?.access_token || null;
+      }
+
+      // Otherwise, get a new token
+      const params = new URLSearchParams();
+      params.append('grant_type', 'client_credentials');
+      params.append('client_id', this.clientId);
+      params.append('client_secret', this.clientSecret);
+
+      console.log('[fw] Requesting new access token...');
+      
+      const response = await axios.post(this.tokenEndpoint, params, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      // Store the token with its expiration time
+      this.currentToken = {
+        ...response.data,
+        expiresAt: Date.now() + (response.data.expires_in * 1000)
+      };
+
+      console.log('[fw] New access token obtained, expires in:', response.data.expires_in, 'seconds');
+      
+      return this.currentToken?.access_token || null;
+    } catch (error: any) {
+      console.error('[fw] Failed to get access token:', error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get authorization header with access token
+   */
+  private async getAuthHeader(): Promise<{ Authorization: string }> {
+    const token = await this.getAccessToken();
+    if (!token) {
+      throw new Error('Failed to get Flutterwave access token');
+    }
+    return { Authorization: `Bearer ${token}` };
   }
 
   /**
@@ -62,7 +137,7 @@ export class FlutterwaveService {
     reference: string;
   }): Promise<FlutterwavePayoutResponse> {
     try {
-      if (!this.secretKey) {
+      if (!this.clientId || !this.clientSecret) {
         // Simulate payout in test mode
         return this.simulatePayout(payoutData);
       }
@@ -82,7 +157,7 @@ export class FlutterwaveService {
         payload,
         {
           headers: {
-            'Authorization': `Bearer ${this.secretKey}`,
+            ...(await this.getAuthHeader()),
             'Content-Type': 'application/json'
           }
         }
@@ -100,16 +175,14 @@ export class FlutterwaveService {
    */
   async verifyPayout(transferId: number): Promise<any> {
     try {
-      if (!this.secretKey) {
+      if (!this.clientId || !this.clientSecret) {
         return this.simulatePayoutVerification(transferId);
       }
 
       const response = await axios.get(
         `${this.baseUrl}/transfers/${transferId}`,
         {
-          headers: {
-            'Authorization': `Bearer ${this.secretKey}`
-          }
+          headers: await this.getAuthHeader()
         }
       );
 
@@ -125,16 +198,14 @@ export class FlutterwaveService {
    */
   async getBankList(): Promise<any[]> {
     try {
-      if (!this.secretKey) {
+      if (!this.clientId || !this.clientSecret) {
         return this.getMockBankList();
       }
 
       const response = await axios.get(
         `${this.baseUrl}/banks/NG`,
         {
-          headers: {
-            'Authorization': `Bearer ${this.secretKey}`
-          }
+          headers: await this.getAuthHeader()
         }
       );
 
@@ -151,7 +222,7 @@ export class FlutterwaveService {
    */
   async verifyBankAccount(bankCode: string, accountNumber: string): Promise<any> {
     try {
-      if (!this.secretKey) {
+      if (!this.clientId || !this.clientSecret) {
         return this.simulateAccountVerification(bankCode, accountNumber);
       }
 
@@ -163,7 +234,7 @@ export class FlutterwaveService {
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.secretKey}`,
+            ...(await this.getAuthHeader()),
             'Content-Type': 'application/json'
           }
         }
@@ -273,7 +344,7 @@ export class FlutterwaveService {
    */
   getStatus() {
     return {
-      isConfigured: !!this.secretKey,
+      isConfigured: !!(this.clientId && this.clientSecret),
       isTestMode: this.isTestMode,
       baseUrl: this.baseUrl
     };

@@ -1,23 +1,21 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IProcessedEvent extends Document {
-  transactionHash: string;
+  txHash: string;
   logIndex: number;
   withdrawalId?: string;
   processedAt: Date;
 }
 
-const ProcessedEventSchema: Schema = new Schema({
-  transactionHash: { type: String, required: true },
+const ProcessedEventSchema = new Schema<IProcessedEvent>({
+  txHash: { type: String, required: true },
   logIndex: { type: Number, required: true },
-  withdrawalId: { type: String, required: false },
+  withdrawalId: { type: String },
   processedAt: { type: Date, default: Date.now }
 });
 
-// Ensure unique combination of transaction hash and log index
-ProcessedEventSchema.index({ transactionHash: 1, logIndex: 1 }, { unique: true });
-// Index for withdrawal ID lookups
-ProcessedEventSchema.index({ withdrawalId: 1 }, { unique: false, sparse: true });
+// Compound index to ensure uniqueness
+ProcessedEventSchema.index({ txHash: 1, logIndex: 1 }, { unique: true });
 
 export const ProcessedEvent = mongoose.model<IProcessedEvent>('ProcessedEvent', ProcessedEventSchema);
 

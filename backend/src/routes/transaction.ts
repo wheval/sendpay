@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { Transaction } from '../models/Transaction';
 import { authenticateToken } from '../middleware/auth';
-import { exchangeRateService } from '../services/exchangeRateService';
-import { coingeckoService } from '../services/coingeckoService';
-import { starknetService } from '../services/starknetService';
+import { exchangeRateService } from '../services/exchange-rate.service';
+import { coingeckoService } from '../services/coingecko.service';
+import { starknetService } from '../services/starknet.service';
 import { getTokenConfig } from '../lib/constants';
 
 const router = Router();

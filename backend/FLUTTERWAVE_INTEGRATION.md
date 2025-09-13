@@ -194,11 +194,9 @@ Authorization: Bearer {JWT_TOKEN}
 
 ### **Flutterwave (Required):**
 ```bash
-# Your Flutterwave client ID
+# Your Flutterwave OAuth 2.0 credentials
 FLUTTERWAVE_CLIENT_ID=your_client_id_here
-
-# Your Flutterwave secret key
-FLUTTERWAVE_SECRET_KEY=your_secret_key_here
+FLUTTERWAVE_CLIENT_SECRET=your_client_secret_here
 
 # Your Flutterwave encryption key
 FLUTTERWAVE_ENCRYPTION_KEY=your_encryption_key_here
@@ -336,7 +334,7 @@ The service includes comprehensive error handling for:
 ## 🔄 **Integration with SendPay Workflow:**
 
 ### **Current Integration Points:**
-1. **Contract Event Watcher** - Automatically triggers Flutterwave transfers
+1. **Apibara Event Monitoring** - Automatically triggers Flutterwave transfers
 2. **Transaction Processing** - Links Flutterwave transfers to transactions
 3. **User Balance Updates** - Updates user balances after transfers
 4. **Error Handling** - Comprehensive error logging and recovery

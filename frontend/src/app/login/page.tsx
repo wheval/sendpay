@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -27,6 +27,7 @@ import {
 	Building2,
 	Eye,
 	EyeOff,
+	Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -43,8 +44,17 @@ import {
 } from "@/lib/schemas";
 import { useToast } from "@/hooks/use-toast";
 import { cookies } from "@/lib/cookies";
-import { getActiveBanks } from "@/lib/constants";
 import { normalizeHex } from "@/lib/utils";
+
+interface Bank {
+  id: number;
+  code: string;
+  name: string;
+  country: string;
+  currency: string;
+  type: string;
+  active: boolean;
+}
 
 export default function LoginPage() {
 	const [isOnboarding, setIsOnboarding] = useState(false);
@@ -63,12 +73,53 @@ export default function LoginPage() {
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [fullName, setFullName] = useState("");
 	const [phone, setPhone] = useState("");
+	const [bankCode, setBankCode] = useState("");
 	const [bankName, setBankName] = useState("");
 	const [accountNumber, setAccountNumber] = useState("");
 	const [accountName, setAccountName] = useState("");
 
+	// Banks state
+	const [banks, setBanks] = useState<Bank[]>([]);
+	const [banksLoading, setBanksLoading] = useState(false);
+
 	const { toast } = useToast();
 	const router = useRouter();
+
+	// Fetch banks from Flutterwave API
+	useEffect(() => {
+		const fetchBanks = async () => {
+			if (step === 2 && banks.length === 0) {
+				setBanksLoading(true);
+				try {
+					const response = await api.cavos.banks();
+					if (response.success && response.data) {
+						setBanks(response.data);
+					}
+				} catch (error) {
+					console.error('Failed to fetch banks:', error);
+					toast({
+						title: "Error",
+						description: "Failed to load banks. Please try again.",
+						variant: "destructive",
+					});
+				} finally {
+					setBanksLoading(false);
+				}
+			}
+		};
+
+		fetchBanks();
+	}, [step, banks.length, toast]);
+
+	// Handle bank selection
+	const handleBankSelection = (selectedBankCode: string) => {
+		setBankCode(selectedBankCode);
+		const selectedBank = banks.find(bank => bank.code === selectedBankCode);
+		if (selectedBank) {
+			setBankName(selectedBank.name);
+		}
+		clearFieldError("bankCode");
+	};
 
 	const validateForm = (schema: z.ZodSchema, data: any) => {
 		try {
@@ -111,6 +162,7 @@ export default function LoginPage() {
 			const data = res.data;
 			const cavosData = data?.data || data;
 
+			//TODO: reduce it to 1 day for security
 			// Store tokens in cookies (more secure than localStorage)
 			if (res.token) {
 				cookies.set("jwt", res.token, 7); // 7 days
@@ -284,6 +336,7 @@ export default function LoginPage() {
 		} else if (step === 2) {
 			// Validate step 2 and submit onboarding
 			const bankData = {
+				bankCode,
 				bankName,
 				accountNumber,
 				accountName,
@@ -298,6 +351,7 @@ export default function LoginPage() {
 				if (
 					!fullName ||
 					!phone ||
+					!bankCode ||
 					!bankName ||
 					!accountNumber ||
 					!accountName
@@ -315,6 +369,7 @@ export default function LoginPage() {
 					name: fullName,
 					phone,
 					bankDetails: {
+						bankCode,
 						bankName,
 						accountNumber,
 						accountName,
@@ -369,6 +424,7 @@ export default function LoginPage() {
 		setConfirmPassword("");
 		setFullName("");
 		setPhone("");
+		setBankCode("");
 		setBankName("");
 		setAccountNumber("");
 		setAccountName("");
@@ -687,33 +743,40 @@ export default function LoginPage() {
 									{step === 2 && (
 										<>
 											<div className="space-y-2">
-												<Label htmlFor="bankName">Bank Name</Label>
+												<Label htmlFor="bankCode">Bank</Label>
 												<Select
-													value={bankName}
-													onValueChange={(value) => {
-														setBankName(value);
-														clearFieldError("bankName");
-													}}
+													value={bankCode}
+													onValueChange={handleBankSelection}
 													required
 												>
 													<SelectTrigger
 														className={
-															getFieldError("bankName") ? "border-red-500" : ""
+															getFieldError("bankCode") ? "border-red-500" : ""
 														}
 													>
 														<SelectValue placeholder="Select your bank" />
 													</SelectTrigger>
 													<SelectContent>
-														{getActiveBanks().map((bank) => (
-															<SelectItem key={bank.code} value={bank.code}>
-																{bank.shortName}
+														{banksLoading ? (
+															<div className="flex items-center justify-center py-4">
+																<Loader2 className="h-6 w-6 animate-spin text-primary" />
+															</div>
+														) : banks.length === 0 ? (
+															<SelectItem value="" disabled>
+																No banks found. Please try again later.
 															</SelectItem>
-														))}
+														) : (
+															banks.map((bank) => (
+																<SelectItem key={bank.id} value={bank.code}>
+																	{bank.name}
+																</SelectItem>
+															))
+														)}
 													</SelectContent>
 												</Select>
-												{getFieldError("bankName") && (
+												{getFieldError("bankCode") && (
 													<p className="text-red-500 text-xs">
-														{getFieldError("bankName")}
+														{getFieldError("bankCode")}
 													</p>
 												)}
 											</div>

@@ -8,6 +8,8 @@ export interface Bank {
   isActive: boolean
 }
 
+
+//TODO: change this to get bank from flutterwave
 // Supported Nigerian Banks
 export const SUPPORTED_BANKS: Bank[] = [
   {

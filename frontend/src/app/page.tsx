@@ -39,9 +39,9 @@ export default function HomePage() {
 									<ArrowRight className="ml-2 h-5 w-5" />
 								</Link>
 							</Button>
-							<Button variant="outline" size="lg" className="text-lg px-8 py-6">
+							{/* <Button variant="outline" size="lg" className="text-lg px-8 py-6">
 								<Link href="/receive">Receive Money</Link>
-							</Button>
+							</Button> */}
 						</div>
 						<p className="text-muted-foreground text-sm mt-8 max-w-3xl mx-auto">
 							*Available in Nigeria today.
