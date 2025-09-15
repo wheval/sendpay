@@ -104,6 +104,32 @@ export const api = {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       })
   },
+
+  // Flutterwave endpoints
+  flutterwave: {
+    banks: (token?: string) =>
+      request('/flutterwave/banks', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      }),
+    addBank: (data: any, token?: string) =>
+      request('/flutterwave/bank/add', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: JSON.stringify(data)
+      }),
+    verifyAccount: (data: any, token?: string) =>
+      request('/flutterwave/verify-account', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: JSON.stringify(data)
+      }),
+    transfer: (data: any, token?: string) =>
+      request('/flutterwave/transfer', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: JSON.stringify(data)
+      })
+  },
   
   // Starknet endpoints
   starknet: {

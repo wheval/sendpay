@@ -3,6 +3,7 @@ import { authenticateToken } from '../middleware/auth';
 import { flutterwaveService } from '../services/flutterwave.service';
 import { generateReference } from '../utils/helpers';
 import { Transaction } from '../models/Transaction';
+import { BankAccount } from '../models/BankAccount';
 
 const router = Router();
 
@@ -24,6 +25,65 @@ router.get('/banks', authenticateToken, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve banks',
+      error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : 'Internal server error'
+    });
+  }
+});
+
+/**
+ * POST /api/flutterwave/bank/add
+ * Add and verify a bank account
+ */
+router.post('/bank/add', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { accountNumber, bankCode } = req.body;
+    const userId = req.user._id;
+
+    if (!accountNumber || !bankCode) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Account number and bank code are required' 
+      });
+    }
+
+    // Verify account details with Flutterwave
+    const verification = await flutterwaveService.verifyBankAccount(bankCode, accountNumber);
+    if (!verification.status) {
+      return res.status(400).json({ 
+        success: false, 
+        message: verification.message 
+      });
+    }
+
+    const { account_name } = verification.data;
+
+    // Get bank name from the bank list
+    const banks = await flutterwaveService.getBankList();
+    const bank = banks.find((b: any) => b.code === bankCode);
+    const bankName = bank ? bank.name : 'Unknown Bank';
+
+    // Save bank account to database
+    const bankAccount = new BankAccount({
+      userId,
+      accountNumber,
+      bankCode,
+      accountName: account_name,
+      bankName,
+    });
+
+    await bankAccount.save();
+
+    res.json({ 
+      success: true, 
+      message: 'Bank account added successfully', 
+      data: bankAccount 
+    });
+
+  } catch (error: unknown) {
+    console.error('Bank account addition error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add bank account',
       error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : 'Internal server error'
     });
   }

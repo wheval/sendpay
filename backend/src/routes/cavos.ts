@@ -205,20 +205,6 @@ router.post('/signup', async (req, res) => {
   }
 });
 
-/**
- * @route   GET /api/cavos/banks
- * @desc    Get list of supported banks from Flutterwave
- * @access  Private
- */
-router.get('/banks', authenticateToken, async (req, res) => {
-  try {
-    const banks = await flutterwaveService.getBankList();
-    res.json({ success: true, data: banks });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-});
 
 /**
  * @route   GET /api/cavos/balance/:address
@@ -300,51 +286,6 @@ router.post('/execute', async (req, res) => {
   }
 });
 
-/**
- * @route   POST /api/cavos/bank/add
- * @desc    Add and verify a bank account
- * @access  Private
- */
-router.post('/bank/add', authenticateToken, async (req, res) => {
-  const { accountNumber, bankCode } = req.body;
-  const userId = req.user._id;
-
-  if (!accountNumber || !bankCode) {
-    return res.status(400).json({ success: false, message: 'Account number and bank code are required' });
-  }
-
-  try {
-    // Verify account details with Flutterwave
-    const verification = await flutterwaveService.verifyBankAccount(bankCode, accountNumber);
-    if (!verification.status) {
-      return res.status(400).json({ success: false, message: verification.message });
-    }
-
-    const { account_name } = verification.data;
-
-    // Get bank name from the bank list
-    const banks = await flutterwaveService.getBankList();
-    const bank = banks.find((b: any) => b.code === bankCode);
-    const bankName = bank ? bank.name : 'Unknown Bank';
-
-    // Save bank account to database
-    const bankAccount = new BankAccount({
-      userId,
-      accountNumber,
-      bankCode,
-      accountName: account_name,
-      bankName,
-    });
-
-    await bankAccount.save();
-
-    res.json({ success: true, message: 'Bank account added successfully', data: bankAccount });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-});
 
 /**
  * @route   POST /api/cavos/withdraw

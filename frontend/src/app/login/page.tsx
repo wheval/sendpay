@@ -91,7 +91,7 @@ export default function LoginPage() {
 			if (step === 2 && banks.length === 0) {
 				setBanksLoading(true);
 				try {
-					const response = await api.cavos.banks();
+					const response = await api.flutterwave.banks();
 					if (response.success && response.data) {
 						setBanks(response.data);
 					}
