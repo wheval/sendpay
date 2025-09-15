@@ -1,8 +1,8 @@
 # 🔐 Token Approval Guide
 
-## **🚨 Critical Issue Addressed**
+> **Note**: This guide provides implementation guidance for token approval patterns. The current contract implementation may not include all features described here.
 
-### **Token Approval for Contract Transfers**
+## **Token Approval for Contract Transfers**
 
 ---
 

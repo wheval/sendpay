@@ -71,12 +71,15 @@ sendpay/
 │   │   │   ├── transaction.ts
 │   │   │   └── starknet.ts  # Blockchain Operations
 │   │   ├── services/        # Business Logic
-│   │   │   ├── cavosService.ts
-│   │   │   ├── starknetService.ts
-│   │   │   └── exchangeRateService.ts
+│   │   │   ├── cavos.service.ts
+│   │   │   ├── starknet.service.ts
+│   │   │   └── exchange-rate.service.ts
 │   │   ├── middleware/      # Express Middleware
 │   │   │   └── auth.ts      # JWT Authentication
 │   │   └── types/           # TypeScript Interfaces
+│   ├── indexers/            # Apibara indexers
+│   │   └── sendpay.indexer.ts
+│   ├── apibara.config.ts    # Apibara config with presets
 │   └── package.json
 │
 └── README.md
@@ -99,11 +102,13 @@ sendpay/
 - **MongoDB** - NoSQL database
 - **Mongoose** - MongoDB ODM
 - **JWT** - Authentication tokens
+- **Apibara** - Indexers for Starknet events
 
 ### **Blockchain**
 - **Starknet** - Layer 2 scaling solution
 - **Cavos SDK** - Wallet management & gasless transactions
-- **Cairo** - Smart contract language (planned)
+- **Cairo** - Smart contract language
+- **Apibara** - Event streaming indexers
 
 ### **Infrastructure**
 - **MongoDB Atlas** - Cloud database
@@ -175,6 +180,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001/api
    npm install
    cp .env.example .env
    # Edit .env with your credentials
+   # Required for indexer: DNA_TOKEN=your_apibara_api_key
    npm run dev
    ```
 
@@ -228,6 +234,7 @@ npm test
 - [x] **Mobile-optimized navigation with hamburger menu**
 - [x] **Updated hero copy: "STRK/USDC to NAIRA in minutes"**
 - [x] **Production deployment ready**
+- [x] **Real-time blockchain event listening** - Apibara indexer implemented
 
 ### **🚀 Deployment Status**
 - [x] **Backend deployed to Render** - Production ready
@@ -238,7 +245,6 @@ npm test
 
 ### **🔄 In Progress**
 - [ ] Smart contract integration
-- [ ] Real-time blockchain event listening
 - [ ] Payment processing automation
 - [ ] Bank transfer integration
 
@@ -286,6 +292,8 @@ npm test
 - `GET /api/starknet/balance/:address` - Get wallet balance
 - `POST /api/starknet/withdraw` - Process withdrawal
 - `GET /api/starknet/network-info` - Network information
+  
+Indexers are run via Apibara CLI, not via HTTP routes. See backend README for scripts.
 
 ## �� Deployment
 
@@ -339,6 +347,8 @@ npm start
 - ✅ **Production Logging**: Backend now logs correct public URLs
 - ✅ **Environment Handling**: Proper production vs development configs
 - ✅ **Production Ready**: Backend and frontend ready for deployment
+- ✅ **Apibara Integration**: Indexer implemented for real-time event listening
+- ✅ **Documentation**: Updated all READMEs to reflect current codebase
 
 ## 🤝 Contributing
 
