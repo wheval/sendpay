@@ -36,7 +36,7 @@ interface TransactionSummary {
   pendingAmount: number
   completedAmount: number
 }
-
+//TODO: allow contract handle some of these stuff
 export default function HistoryPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [summary, setSummary] = useState<TransactionSummary | null>(null)

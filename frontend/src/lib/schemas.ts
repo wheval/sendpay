@@ -44,6 +44,7 @@ export const userProfileSchema = z.object({
 
 // Bank account validation
 export const bankAccountSchema = z.object({
+  bankCode: z.string().min(1, "Please select a bank"),
   bankName: z.string().min(1, "Please select a bank"),
   accountNumber: z.string()
     .length(10, "Account number must be exactly 10 digits")

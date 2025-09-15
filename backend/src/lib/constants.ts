@@ -29,6 +29,23 @@ export function getTokenConfig(symbol: 'STRK'|'USDC'|'USDT'|'ETH'): TokenConfig 
 	return TOKENS[symbol][TOKENS.NETWORK]
 }
 
-export const DEFAULT_USD_NGN_FALLBACK: number = Number(process.env.USD_NGN_FALLBACK || 1400)
+export const DEFAULT_USD_NGN_FALLBACK: number = Number(process.env.USD_NGN_FALLBACK || 1500)
+
+// Contract addresses
+export const SENDPAY_CONTRACT_ADDRESS = process.env.SENDPAY_CONTRACT_ADDRESS || '0x05adeea982017c957b9671fe1f0870d83b60868d688dca39681b415493c3ae99'
+export const USDC_TESTNET_ADDRESS = process.env.USDC_TESTNET_ADDRESS || '0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080'
+
+// Flutterwave configuration
+export const FLUTTERWAVE_CLIENT_ID = process.env.FLUTTERWAVE_CLIENT_ID || ''
+export const FLUTTERWAVE_CLIENT_SECRET = process.env.FLUTTERWAVE_CLIENT_SECRET || ''
+export const FLUTTERWAVE_ENCRYPTION_KEY = process.env.FLUTTERWAVE_ENCRYPTION_KEY || ''
+export const FLUTTERWAVE_CALLBACK_URL = process.env.FLUTTERWAVE_CALLBACK_URL || 'http://localhost:3001/api/flutterwave/webhook'
+
+// Starknet configuration
+export const STARKNET_RPC_URL = process.env.STARKNET_RPC_URL || 'https://starknet-sepolia.public.blastapi.io/rpc/v0_7'
+
+// Apibara configuration
+export const DNA_TOKEN = process.env.DNA_TOKEN || ''
+export const APIBARA_STREAM_URL = process.env.APIBARA_STREAM_URL || 'https://sepolia.starknet.a5a.ch'
 
 

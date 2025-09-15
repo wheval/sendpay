@@ -1,92 +1,32 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface IWithdrawal {
-  userId: string;
+export interface IWithdrawal extends Document {
+  userId: mongoose.Types.ObjectId;
   amount: number;
-  token: 'USDC' | 'STRK';
-  amountNGN: number;
-  bankAccount: {
-    bankName: string;
-    accountNumber: string;
-    accountName: string;
-  };
-  description?: string;
-  status: 'pending' | 'swapping' | 'processing' | 'completed' | 'failed';
-  swapTxHash?: string;
-  contractTxHash?: string;
-  error?: string;
+  bankAccountId: mongoose.Types.ObjectId;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  reference: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface IWithdrawalDocument extends IWithdrawal, Document {}
-
-const WithdrawalSchema = new Schema<IWithdrawalDocument>({
-  userId: {
-    type: String,
-    required: true,
-    ref: 'User'
+const WithdrawalSchema = new Schema<IWithdrawal>({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  amount: { type: Number, required: true },
+  bankAccountId: { type: Schema.Types.ObjectId, ref: 'BankAccount', required: true },
+  status: { 
+    type: String, 
+    enum: ['pending', 'processing', 'completed', 'failed'], 
+    default: 'pending' 
   },
-  amount: {
-    type: Number,
-    required: true,
-    min: 0.01
-  },
-  token: {
-    type: String,
-    required: true,
-    enum: ['USDC', 'STRK']
-  },
-  amountNGN: {
-    type: Number,
-    required: true,
-    min: 1000
-  },
-  bankAccount: {
-    bankName: {
-      type: String,
-      required: true
-    },
-    accountNumber: {
-      type: String,
-      required: true
-    },
-    accountName: {
-      type: String,
-      required: true
-    }
-  },
-  description: {
-    type: String,
-    required: false
-  },
-  status: {
-    type: String,
-    required: true,
-    enum: ['pending', 'swapping', 'processing', 'completed', 'failed'],
-    default: 'pending'
-  },
-  swapTxHash: {
-    type: String,
-    required: false
-  },
-  contractTxHash: {
-    type: String,
-    required: false
-  },
-  error: {
-    type: String,
-    required: false
-  }
-}, {
-  timestamps: true
+  reference: { type: String, required: true, unique: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
-// Indexes for better query performance
-WithdrawalSchema.index({ userId: 1 });
-WithdrawalSchema.index({ status: 1 });
-WithdrawalSchema.index({ createdAt: 1 });
-WithdrawalSchema.index({ swapTxHash: 1 });
-WithdrawalSchema.index({ contractTxHash: 1 });
+// Indexes for quick lookups
+WithdrawalSchema.index({ userId: 1, status: 1 });
+WithdrawalSchema.index({ reference: 1 });
+WithdrawalSchema.index({ createdAt: -1 });
 
-export const Withdrawal = mongoose.model<IWithdrawalDocument>('Withdrawal', WithdrawalSchema);
+export const Withdrawal = mongoose.model<IWithdrawal>('Withdrawal', WithdrawalSchema);

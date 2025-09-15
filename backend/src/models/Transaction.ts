@@ -35,7 +35,6 @@ const TransactionSchema = new Schema<ITransactionDocument>({
   reference: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   starknetTxHash: {
@@ -51,6 +50,10 @@ const TransactionSchema = new Schema<ITransactionDocument>({
       type: String,
       trim: true
     }
+  },
+  metadata: {
+    type: Schema.Types.Mixed,
+    default: {}
   }
 }, {
   timestamps: true
@@ -61,7 +64,7 @@ TransactionSchema.index({ userId: 1 });
 TransactionSchema.index({ type: 1 });
 TransactionSchema.index({ status: 1 });
 TransactionSchema.index({ createdAt: -1 });
-TransactionSchema.index({ reference: 1 });
+TransactionSchema.index({ reference: 1 }, { unique: true });
 TransactionSchema.index({ starknetTxHash: 1 });
 
 // Virtual for formatted amounts

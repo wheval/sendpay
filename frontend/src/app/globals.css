@@ -45,8 +45,8 @@
     --accent-hover: 262 100% 70%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 262 100% 8%;
-    --input: 262 100% 8%;
+    --border: 262 100% 25%;
+    --input: 262 100% 25%;
     --ring: 262 100% 61%;
   }
 }

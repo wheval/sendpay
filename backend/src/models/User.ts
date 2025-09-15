@@ -6,7 +6,6 @@ const UserSchema = new Schema<IUserDocument>({
   email: {
     type: String,
     required: true,
-    unique: true,
     lowercase: true,
     trim: true
   },
@@ -22,9 +21,7 @@ const UserSchema = new Schema<IUserDocument>({
   },
   cavosWalletAddress: {
     type: String,
-
     required: false,
-    unique: true,
     sparse: true,
     trim: true
   },
@@ -48,6 +45,11 @@ const UserSchema = new Schema<IUserDocument>({
       required: true
     }
   },
+  balance: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   balanceUSD: {
     type: Number,
     default: 0,
@@ -63,8 +65,8 @@ const UserSchema = new Schema<IUserDocument>({
 });
 
 // Indexes for better query performance
-UserSchema.index({ email: 1 });
-UserSchema.index({ cavosWalletAddress: 1 });
+UserSchema.index({ email: 1 }, { unique: true });
+UserSchema.index({ cavosWalletAddress: 1 }, { unique: true, sparse: true });
 UserSchema.index({ 'bankDetails.accountNumber': 1 });
 
 // Virtual for formatted balance

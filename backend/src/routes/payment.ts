@@ -3,8 +3,8 @@ import { User } from '../models/User';
 import { Transaction } from '../models/Transaction';
 import { authenticateToken, optionalAuth } from '../middleware/auth';
 import { generateReference, generateTransactionHash } from '../utils/helpers';
-import { exchangeRateService } from '../services/exchangeRateService';
-import { starknetService } from '../services/starknetService';
+import { exchangeRateService } from '../services/exchange-rate.service';
+import { starknetService } from '../services/starknet.service';
 import { IUserDocument } from '../types';
 
 const router = Router();

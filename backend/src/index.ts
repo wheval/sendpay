@@ -1,6 +1,9 @@
+// Load environment variables FIRST, before any other imports
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/user';
@@ -8,35 +11,36 @@ import { paymentRoutes } from './routes/payment';
 import { transactionRoutes } from './routes/transaction';
 import { starknetRoutes } from './routes/starknet';
 import { cavosRoutes } from './routes/cavos';
-  
-// Load environment variables
-dotenv.config();
+import { flutterwaveRoutes } from './routes/flutterwave';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
-app.use(cors({
+// CORS configuration
+const corsOptions = {
   origin: [
-    'http://localhost:3000',
-    'https://sendpay-five.vercel.app',
-    'https://sendpay.vercel.app'
+    'http://localhost:3000',           // Frontend dev server
+    'http://localhost:3001',
+    'http://localhost:3002', 
+    'https://sendpay-five.vercel.app', // Vercel frontend
+    'https://sendpay.vercel.app'       // Vercel frontend
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept'],
   preflightContinue: false,
   optionsSuccessStatus: 204
-}));
+};
 
-// Add explicit CORS headers for preflight requests
-app.options('*', cors());
+// Apply CORS middleware
+app.use(cors(corsOptions));
 
 // Debug middleware to log CORS issues
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
   next();
 });
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -56,6 +60,7 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/transaction', transactionRoutes);
 app.use('/api/starknet', starknetRoutes);
 app.use('/api/cavos', cavosRoutes);
+app.use('/api/flutterwave', flutterwaveRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -79,12 +84,6 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
 
 // 404 handler
 app.use('*', (req, res) => {
-  // Ensure CORS headers are set even for 404s
-  res.header('Access-Control-Allow-Origin', 'https://sendpay-five.vercel.app');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Origin, Accept');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
   res.status(404).json({ error: 'Route not found' });
 });
 
@@ -92,9 +91,8 @@ app.use('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 SendPay Backend API running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  const externalUrl = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || '';
-  const healthUrl = externalUrl ? `${externalUrl}/health` : `http://localhost:${PORT}/health`;
-  console.log(`🔗 Health check: ${healthUrl}`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  console.log(`🌐 CORS enabled for: ${corsOptions.origin.join(', ')}`);
 });
 
 export default app;

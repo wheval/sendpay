@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { starknetService } from '../services/starknetService';
-import { exchangeRateService } from '../services/exchangeRateService';
+import { starknetService } from '../services/starknet.service';
+import { exchangeRateService } from '../services/exchange-rate.service';
 
 const router = Router();
 

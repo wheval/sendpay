@@ -1,5 +1,5 @@
 import { CavosAuth, executeCalls } from 'cavos-service-sdk';
-import { starknetService } from './starknetService';
+import { starknetService } from './starknet.service';
 
 export interface CavosConfig {
   network: 'sepolia' | 'mainnet' | string;
@@ -64,7 +64,7 @@ class CavosService {
 
   async getBalance(address: string, tokenAddress: string, decimals = '18') {
     const result = await starknetService.getTokenBalance(address, tokenAddress, decimals);
-    return { balance: result, formatted: String(result) };
+    return { balance: String(result), formatted: String(result) };
   }
 
   async execute(address: string, calls: any[], accessToken: string) {

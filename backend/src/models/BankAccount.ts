@@ -1,70 +1,31 @@
-import mongoose, { Schema } from 'mongoose';
-import { IBankAccount, IBankAccountDocument } from '../types';
+import mongoose, { Schema, Document } from 'mongoose';
 
-const BankAccountSchema = new Schema<IBankAccountDocument>({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  bankName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  accountNumber: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  accountName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  bankCode: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  recipientCode: {
-    type: String,
-    trim: true
-  },
-  isDefault: {
-    type: Boolean,
-    default: false
-  }
-}, {
-  timestamps: true
+export interface IBankAccount extends Document {
+  userId: mongoose.Types.ObjectId;
+  accountNumber: string;
+  bankCode: string;
+  accountName: string;
+  bankName: string;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const BankAccountSchema = new Schema<IBankAccount>({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  accountNumber: { type: String, required: true },
+  bankCode: { type: String, required: true },
+  accountName: { type: String, required: true },
+  bankName: { type: String, required: true },
+  isDefault: { type: Boolean, default: false },
+  isActive: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
-// Indexes for better query performance
-BankAccountSchema.index({ userId: 1 });
+// Index for quick lookups
+BankAccountSchema.index({ userId: 1, accountNumber: 1 });
 BankAccountSchema.index({ accountNumber: 1 });
-BankAccountSchema.index({ isDefault: 1 });
 
-// Ensure only one default account per user
-BankAccountSchema.pre('save', async function(next) {
-  if (this.isDefault) {
-    // Remove default flag from other accounts
-    await mongoose.model('BankAccount').updateMany(
-      { userId: this.userId, _id: { $ne: this._id } },
-      { isDefault: false }
-    );
-  }
-  next();
-});
-
-// Virtual for masked account number
-BankAccountSchema.virtual('maskedAccountNumber').get(function() {
-  const accountNumber = this.accountNumber;
-  if (accountNumber.length <= 4) return accountNumber;
-  return `${accountNumber.slice(0, 4)}****${accountNumber.slice(-4)}`;
-});
-
-// Ensure virtual fields are serialized
-BankAccountSchema.set('toJSON', { virtuals: true });
-BankAccountSchema.set('toObject', { virtuals: true });
-
-export const BankAccount = mongoose.model<IBankAccountDocument>('BankAccount', BankAccountSchema);
+export const BankAccount = mongoose.model<IBankAccount>('BankAccount', BankAccountSchema);

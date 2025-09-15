@@ -1,5 +1,6 @@
 import { RpcProvider, Account, Contract, cairo, uint256, CallData } from 'starknet';
 import { IStarknetConfig, IStarknetTransaction } from '../types';
+import { SENDPAY_ABI } from '../lib/sendpay_abi';
 
 class StarknetService {
   private provider: RpcProvider;
@@ -10,7 +11,7 @@ class StarknetService {
     this.config = {
       rpcUrl: process.env.STARKNET_RPC_URL || 'https://starknet-sepolia.public.blastapi.io/rpc/v0_7',
       chainId: process.env.STARKNET_CHAIN_ID || 'SN_SEPOLIA',
-      contractAddress: process.env.STARKNET_CONTRACT_ADDRESS || '0x0',
+      contractAddress: process.env.SENDPAY_CONTRACT_ADDRESS || '0x05adeea982017c957b9671fe1f0870d83b60868d688dca39681b415493c3ae99',
       usdcTokenAddress: process.env.USDC_TOKEN_ADDRESS || '0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf56a5fc'
     };
 
@@ -27,10 +28,8 @@ class StarknetService {
   private async initializeContract() {
     try {
       if (this.config.contractAddress !== '0x0') {
-        // Contract ABI would be imported here
-        // For now, we'll create a basic contract instance
         this.contract = new Contract(
-          [], // ABI would go here
+          SENDPAY_ABI,
           this.config.contractAddress,
           this.provider
         );
@@ -56,8 +55,9 @@ class StarknetService {
       calldata
     })
 
-    // Expect Uint256 { low, high }
-    const [lowStr = '0x0', highStr = '0x0'] = res.result || []
+    // Expect Uint256 { low, high } — support both return shapes (array or { result })
+    const resultArray = Array.isArray(res) ? res : (res as any).result
+    const [lowStr = '0x0', highStr = '0x0'] = (resultArray as string[]) || []
     const low = BigInt(lowStr)
     const high = BigInt(highStr)
     const value = (high << 128n) + low
@@ -109,8 +109,8 @@ class StarknetService {
         status = tx.status as 'pending' | 'accepted' | 'rejected';
       }
       
-      if ('block_number' in tx) {
-        blockNumber = tx.block_number;
+      if ('block_number' in tx && typeof (tx as any).block_number === 'number') {
+        blockNumber = (tx as any).block_number as number;
       }
 
       return {
