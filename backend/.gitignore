@@ -46,3 +46,6 @@ out/
 
 # Backend build
 dist/
+
+# Apibara build artifacts
+.apibara

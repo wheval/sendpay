@@ -7,7 +7,14 @@
 		"build": "tsc",
 		"start": "node dist/index.js",
 		"dev": "nodemon",
-		"test": "echo \"Error: no test specified\" && exit 1"
+		"test": "echo \"Error: no test specified\" && exit 1",
+		"indexer:sendpay": "apibara run backend/indexers/sendpay.indexer.ts --config backend/apibara.config.ts --env-file backend/.env",
+		"indexer:sepolia": "apibara run backend/indexers/sendpay.indexer.ts --config backend/apibara.config.ts --env-file backend/.env --preset sepolia",
+		"apibara:dev": "apibara dev --config backend/apibara.config.ts --indexers sendpay",
+		"apibara:dev:sepolia": "apibara dev --config backend/apibara.config.ts --indexers sendpay --preset sepolia",
+		"apibara:build": "apibara build --config backend/apibara.config.ts",
+		"apibara:start": "apibara start --config backend/apibara.config.ts --indexer sendpay",
+		"typecheck": "tsc -p backend/tsconfig.json"
 	},
 	"keywords": [
 		"starknet",
@@ -26,7 +33,11 @@
 		"express": "^4.18.2",
 		"jsonwebtoken": "^9.0.2",
 		"mongoose": "^8.0.3",
-		"starknet": "^5.19.5"
+		"starknet": "^7.6.4",
+		"apibara": "next",
+		"@apibara/starknet": "next",
+		"@apibara/protocol": "next",
+		"zod": "^3.23.8"
 	},
 	"devDependencies": {
 		"@types/cors": "^2.8.17",

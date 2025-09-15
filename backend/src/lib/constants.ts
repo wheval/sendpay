@@ -45,7 +45,7 @@ export const FLUTTERWAVE_CALLBACK_URL = process.env.FLUTTERWAVE_CALLBACK_URL || 
 export const STARKNET_RPC_URL = process.env.STARKNET_RPC_URL || 'https://starknet-sepolia.public.blastapi.io/rpc/v0_7'
 
 // Apibara configuration
-export const APIBARA_API_KEY = process.env.APIBARA_API_KEY || ''
-export const APIBARA_BASE_URL = process.env.APIBARA_BASE_URL || 'https://api.apibara.com'
+export const DNA_TOKEN = process.env.DNA_TOKEN || ''
+export const APIBARA_STREAM_URL = process.env.APIBARA_STREAM_URL || 'https://sepolia.starknet.a5a.ch'
 
 

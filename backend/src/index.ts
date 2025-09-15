@@ -11,7 +11,6 @@ import { paymentRoutes } from './routes/payment';
 import { transactionRoutes } from './routes/transaction';
 import { starknetRoutes } from './routes/starknet';
 import { cavosRoutes } from './routes/cavos';
-import { apibaraRoutes } from './routes/apibara';
 import { flutterwaveRoutes } from './routes/flutterwave';
 
 const app = express();
@@ -21,7 +20,8 @@ const PORT = process.env.PORT || 3001;
 const corsOptions = {
   origin: [
     'http://localhost:3000',           // Frontend dev server
-    'http://localhost:3001',           // Backend dev server
+    'http://localhost:3001',
+    'http://localhost:3002', 
     'https://sendpay-five.vercel.app', // Vercel frontend
     'https://sendpay.vercel.app'       // Vercel frontend
   ],
@@ -60,7 +60,6 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/transaction', transactionRoutes);
 app.use('/api/starknet', starknetRoutes);
 app.use('/api/cavos', cavosRoutes);
-app.use('/api/apibara', apibaraRoutes);
 app.use('/api/flutterwave', flutterwaveRoutes);
 
 // Health check endpoint
