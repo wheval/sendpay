@@ -5,7 +5,7 @@
     "moduleResolution": "node",
     "lib": ["ES2020"],
     "outDir": "./dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -16,15 +16,9 @@
     "sourceMap": true
   },
   "include": [
-    "src/**/*",
-    "indexers/**/*.ts",
-    "lib/**/*.ts",
-    "providers/**/*.ts",
-    "abi/**/*.ts",
-    "./.apibara/types"
+    "src/**/*"
   ],
   "exclude": [
-    "indexers/**/*",
     "node_modules",
     "dist"
   ]
