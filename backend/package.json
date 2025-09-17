@@ -4,7 +4,7 @@
 	"description": "SendPay Backend API for Starknet integration",
 	"main": "dist/index.js",
 	"scripts": {
-		"build": "tsc -p tsconfig.json && tsc -p tsconfig.indexers.json",
+		"build": "tsc -p tsconfig.json && tsc -p tsconfig.indexers.json && tsc -p tsconfig.server.json",
 		"build:deployment": "tsc --project tsconfig.deployment.json",
 		"build:indexer": "apibara build --dir .",
 		"build:api": "tsc -p tsconfig.json",
@@ -29,6 +29,8 @@
 		
 		"start:api:deploy": "node dist/deployment/deployment-service.js api",
 		"start:indexer:deploy": "node dist/deployment/deployment-service.js indexer",
+		"start:indexer:server": "ts-node server.ts",
+		"start:indexer:server:prod": "node dist/server.js",
 		
 		"indexer:sendpay": "apibara run indexers/sendpay.indexer.ts --dir . --env-file .env",
 		"indexer:sepolia": "apibara run indexers/sendpay.indexer.ts --dir . --env-file .env --preset sepolia",
