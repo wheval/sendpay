@@ -1,176 +1,75 @@
+// Load environment variables FIRST, before any other imports
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
+
 import express from "express";
-import { defineIndexer } from "apibara/indexer";
-import { StarknetStream, getSelector } from "@apibara/starknet";
-import type { ApibaraRuntimeConfig } from "apibara/types";
-import { useLogger } from "apibara/plugins";
-import mongoose from "mongoose";
-import { WatcherState } from "./src/models/WatcherState";
-import { ProcessedEvent } from "./src/models/ProcessedEvent";
-import { Transaction } from "./src/models/Transaction";
+import { spawn } from "child_process";
 
-// Event selectors from SendPay ABI
-const EVENT_SELECTORS = {
-  WithdrawalProcessed: getSelector("WithdrawalProcessed"),
-  BatchWithdrawalProcessed: getSelector("BatchWithdrawalProcessed"),
-  TokenApprovalUpdated: getSelector("TokenApprovalUpdated"),
-  EmergencyPaused: getSelector("EmergencyPaused"),
-  EmergencyResumed: getSelector("EmergencyResumed"),
-};
-
-function toHex(value: string | number | bigint): `0x${string}` {
-  const n = BigInt(value);
-  return ("0x" + n.toString(16)) as `0x${string}`;
-}
-
-function readU256(data: (string | number)[], start: number): bigint {
-  const low = BigInt(data[start] as any);
-  const high = BigInt(data[start + 1] as any);
-  return low + (high << 128n);
-}
+// NOTE: We no longer import Apibara programmatic APIs here because
+// apibara v2 does not export 'apibara/indexer' for direct import.
+// Instead, we run the CLI as a child process alongside this HTTP server.
 
 // Start a fake HTTP server so Render doesn't kill the service
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT_INDEXER || 3002; // Use different port from API
 
-app.get("/health", (_, res) => res.send("Indexer alive"));
-app.get("/", (_, res) => res.json({ status: "SendPay Indexer Running", timestamp: new Date().toISOString() }));
+// Middleware
+app.use(express.json());
 
-app.listen(port, () => {
-  console.log(`Fake server running on port ${port}`);
+// Health check endpoint for uptime monitoring
+app.get("/health", (_, res) => {
+  res.json({
+    status: "OK",
+    service: "SendPay Indexer",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    indexer: "running"
+  });
 });
 
-// Start the indexer
-function startIndexer() {
-  const runtimeConfig: ApibaraRuntimeConfig = {
-    sendpay: {
-      streamUrl: process.env.APIBARA_STREAM_URL || "https://sepolia.starknet.a5a.ch",
-      startingBlock: parseInt(process.env.STARTING_BLOCK || "0"),
-      contractAddress: (process.env.CONTRACT_ADDRESS || "0x0") as `0x${string}`,
-    }
-  };
+// Root endpoint
+app.get("/", (_, res) => {
+  res.json({ 
+    status: "SendPay Indexer Running", 
+    timestamp: new Date().toISOString(),
+    health: "/health"
+  });
+});
 
-  const { streamUrl, startingBlock, contractAddress } = (runtimeConfig as any).sendpay as {
-    streamUrl: string;
-    startingBlock: number;
-    contractAddress: `0x${string}`;
-  };
+// Keep-alive endpoint to prevent Render from sleeping
+app.get("/ping", (_, res) => {
+  res.json({ pong: Date.now() });
+});
 
-  // Ensure Mongo connection (re-use existing if present)
-  if (mongoose.connection.readyState === 0) {
-    const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/sendpay";
-    mongoose.set("strictQuery", true);
-    mongoose.connect(mongoUri).catch((err) => {
-      console.error("[sendpay.indexer] MongoDB connection error:", err);
-    });
+// Start the server
+app.listen(port, () => {
+  console.log(`🚀 SendPay Indexer Server running on port ${port}`);
+  console.log(`🔗 Health check: http://localhost:${port}/health`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+});
+
+// Start the indexer via CLI in a child process
+function startIndexerCli() {
+  const npxBin = process.platform === "win32" ? "npx" : "npx";
+  const args = ["apibara", "start", "--dir", ".", "--indexer", "sendpay"]; 
+
+  if (process.env.APIBARA_PRESET) {
+    args.push("--preset", process.env.APIBARA_PRESET);
   }
 
-  const indexer = defineIndexer(StarknetStream)({
-    streamUrl,
-    finality: "accepted",
-    startingBlock: BigInt(startingBlock),
-    filter: {
-      events: [
-        {
-          address: contractAddress as `0x${string}`,
-          // We can filter by specific keys if needed, else capture all
-        },
-      ],
-    },
-    async transform({ block, endCursor }) {
-      const logger = useLogger();
+  const command = `${npxBin} ${args.join(" ")}`;
+  console.log("Starting Apibara indexer via spawn:", command);
 
-      // Save watcher state for resume capability
-      await WatcherState.findOneAndUpdate(
-        { key: "sendpay-indexer" },
-        { lastProcessedBlock: Number(block.header.blockNumber), updatedAt: new Date() },
-        { upsert: true }
-      );
+  const child = spawn(command, [], { shell: true, stdio: "inherit" });
 
-      for (const event of block.events) {
-        const selector = event.keys[0];
-        const txHash = event.transactionHash;
-        const logIndex = event.eventIndex;
-
-        // de-duplication
-        try {
-          await ProcessedEvent.create({ txHash, logIndex, processedAt: new Date() });
-        } catch (e) {
-          // Duplicate event; skip
-          continue;
-        }
-
-        if (selector === EVENT_SELECTORS.WithdrawalProcessed) {
-          // Data layout (flattened):
-          // withdrawal_id.low, withdrawal_id.high,
-          // user,
-          // amount.low, amount.high,
-          // token_address,
-          // bank_account, bank_name, account_name,
-          // timestamp, block_number,
-          // status
-          const withdrawalId = readU256(event.data as any, 0);
-          const user = toHex(event.data[2] as any);
-          const amount = readU256(event.data as any, 3);
-          const tokenAddress = toHex(event.data[5] as any);
-          const bankAccount = event.data[6];
-          const bankName = event.data[7];
-          const accountName = event.data[8];
-          const timestamp = Number(event.data[9]);
-          const blockNumber = Number(event.data[10]);
-          const status = event.data[11];
-
-          await Transaction.findOneAndUpdate(
-            { starknetTxHash: txHash },
-            {
-              status: "completed",
-              starknetTxHash: txHash,
-              $setOnInsert: {
-                description: "Withdrawal processed",
-                type: "withdrawn",
-                amountUSD: 0,
-                amountNGN: 0,
-                userId: undefined,
-              },
-              metadata: {
-                event: "WithdrawalProcessed",
-                withdrawalId: withdrawalId.toString(),
-                user,
-                amount: amount.toString(),
-                tokenAddress,
-                bankAccount,
-                bankName,
-                accountName,
-                timestamp,
-                blockNumber,
-                status,
-              },
-            },
-            { upsert: true }
-          );
-        } else if (selector === EVENT_SELECTORS.BatchWithdrawalProcessed) {
-          const batchId = readU256(event.data as any, 0).toString();
-          const totalWithdrawals = readU256(event.data as any, 2).toString();
-          const totalAmount = readU256(event.data as any, 4).toString();
-          const timestamp = Number(event.data[6]);
-
-          await ProcessedEvent.updateOne(
-            { txHash, logIndex },
-            { $set: { withdrawalId: batchId } }
-          );
-        } else if (selector === EVENT_SELECTORS.TokenApprovalUpdated) {
-          // Optional: store as processed event metadata
-          await ProcessedEvent.updateOne(
-            { txHash, logIndex },
-            { $set: { processedAt: new Date() } }
-          );
-        }
-      }
-    },
+  child.on("exit", (code) => {
+    console.error(`Apibara indexer exited with code ${code}`);
   });
-
-  console.log("Indexer sendpay started");
-  return indexer;
+  child.on("error", (err) => {
+    console.error("Failed to start Apibara indexer:", err);
+  });
 }
 
-// Start the indexer
-startIndexer();
+// Start the indexer CLI alongside the HTTP server
+startIndexerCli();
