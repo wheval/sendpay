@@ -1,37 +1,13 @@
-// Import the contract module itself
-use sendpay::sendpay;
-// Make the required inner structs available in scope
-use sendpay::sendpay::{WithdrawalProcessed, BatchWithdrawalProcessed, TokenApprovalUpdated, EmergencyPaused, EmergencyResumed};
-use sendpay::{WithdrawalData, WithdrawalStatus};
-
-// Traits derived from the interface, allowing to interact with a deployed contract
-use sendpay::{ISendPayDispatcher, ISendPayDispatcherTrait, IAdminDispatcher, IAdminDispatcherTrait};
-
-// Required for declaring and deploying a contract
-use snforge_std::{declare, DeclareResultTrait, ContractClassTrait};
-// Cheatcodes to spy on events and assert their emissions
-use snforge_std::{EventSpyAssertionsTrait, spy_events};
-// Cheatcodes to cheat environment values
-use snforge_std::{
-    start_cheat_caller_address, stop_cheat_caller_address, start_cheat_block_timestamp,
-    stop_cheat_block_timestamp, start_cheat_block_number, stop_cheat_block_number,
-};
-use starknet::{ContractAddress, contract_address_const};
-
-// Mock ERC20 contract for testing
+// Mock ERC20 Contract for testing
 #[starknet::interface]
 pub trait IMockERC20<TContractState> {
     fn transfer_from(
-        ref self: TContractState,
-        sender: ContractAddress,
-        recipient: ContractAddress,
-        amount: u256,
+        ref self: TContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
     ) -> bool;
+    fn transfer(ref self: TContractState, recipient: ContractAddress, amount: u256) -> bool;
     fn balance_of(self: @TContractState, account: ContractAddress) -> u256;
     fn approve(ref self: TContractState, spender: ContractAddress, amount: u256) -> bool;
-    fn allowance(
-        self: @TContractState, owner: ContractAddress, spender: ContractAddress,
-    ) -> u256;
+    fn allowance(self: @TContractState, owner: ContractAddress, spender: ContractAddress) -> u256;
 }
 
 #[starknet::contract]
@@ -41,12 +17,35 @@ pub mod MockERC20 {
 
     #[storage]
     pub struct Storage {
-        balances: Map<ContractAddress, u256>,
-        allowances: Map<ContractAddress, Map<ContractAddress, u256>>,
+        pub balances: Map<ContractAddress, u256>,
+        pub allowances: Map<(ContractAddress, ContractAddress), u256>,
+        pub total_supply: u256,
+    }
+
+    #[constructor]
+    fn constructor(ref self: ContractState, initial_supply: u256, recipient: ContractAddress) {
+        self.balances.entry(recipient).write(initial_supply);
+        self.total_supply.write(initial_supply);
+    }
+
+    // Internal trait must be declared before its implementation and should not be marked as an
+    // external interface
+    trait InternalTrait<TContractState> {
+        fn _transfer(
+            ref self: TContractState,
+            sender: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256,
+        ) -> bool;
     }
 
     #[abi(embed_v0)]
-    impl MockERC20Impl of super::IMockERC20<ContractState> {
+    impl ERC20Impl of super::IMockERC20<ContractState> {
+        fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
+            let sender = get_caller_address();
+            self._transfer(sender, recipient, amount)
+        }
+
         fn transfer_from(
             ref self: ContractState,
             sender: ContractAddress,
@@ -54,20 +53,17 @@ pub mod MockERC20 {
             amount: u256,
         ) -> bool {
             let caller = get_caller_address();
-            let allowance = self.allowances.entry(sender).entry(caller).read();
-            assert(allowance >= amount, 'Insufficient allowance');
-            
-            let sender_balance = self.balances.entry(sender).read();
-            assert(sender_balance >= amount, 'Insufficient balance');
-            
-            // Update balances
-            self.balances.entry(sender).write(sender_balance - amount);
-            let recipient_balance = self.balances.entry(recipient).read();
-            self.balances.entry(recipient).write(recipient_balance + amount);
-            
-            // Update allowance
-            self.allowances.entry(sender).entry(caller).write(allowance - amount);
-            
+            let current_allowance = self.allowances.entry((sender, caller)).read();
+
+            assert(current_allowance >= amount, 'Insufficient allowance');
+
+            self.allowances.entry((sender, caller)).write(current_allowance - amount);
+            self._transfer(sender, recipient, amount)
+        }
+
+        fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
+            let caller = get_caller_address();
+            self.allowances.entry((caller, spender)).write(amount);
             true
         }
 
@@ -75,423 +71,484 @@ pub mod MockERC20 {
             self.balances.entry(account).read()
         }
 
-        fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) -> bool {
-            let caller = get_caller_address();
-            self.allowances.entry(caller).entry(spender).write(amount);
-            true
-        }
-
         fn allowance(
             self: @ContractState, owner: ContractAddress, spender: ContractAddress,
         ) -> u256 {
-            self.allowances.entry(owner).entry(spender).read()
+            self.allowances.entry((owner, spender)).read()
         }
     }
 
-    #[generate_trait]
-    pub impl InternalImpl of InternalTrait {
-        fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
-            let balance = self.balances.entry(to).read();
-            self.balances.entry(to).write(balance + amount);
+    impl InternalImpl of InternalTrait<ContractState> {
+        fn _transfer(
+            ref self: ContractState,
+            sender: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256,
+        ) -> bool {
+            assert(amount > 0_u256, 'Amount must be positive');
+
+            let sender_balance = self.balances.entry(sender).read();
+            assert(sender_balance >= amount, 'Insufficient balance');
+
+            let recipient_balance = self.balances.entry(recipient).read();
+
+            self.balances.entry(sender).write(sender_balance - amount);
+            self.balances.entry(recipient).write(recipient_balance + amount);
+
+            true
         }
     }
+    // InternalTrait already declared above
+}
+use core::hash::HashStateTrait;
+
+// Integration tests scaffold for sendpay using snforge
+use core::poseidon::PoseidonTrait;
+use core::traits::Into;
+use sendpay::{WithdrawalRequest, SettlementProof, STATUS_COMPLETED};
+
+// Admin extension dispatcher for whitelisting and deposits
+use sendpay::sendpay::{IAdminExtDispatcher, IAdminExtDispatcherTrait};
+
+// Import main contract interface dispatchers
+use sendpay::{ISendPayDispatcher, ISendPayDispatcherTrait};
+use sendpay::{IAdminDispatcher, IAdminDispatcherTrait};
+use snforge_std::{
+    ContractClassTrait, DeclareResultTrait, declare, start_cheat_caller_address,
+    stop_cheat_caller_address,
+};
+use starknet::ContractAddress;
+
+
+fn deploy_erc20(
+    _name: felt252,
+    _symbol: felt252,
+    _decimals: u8,
+    initial_supply: u256,
+    recipient: ContractAddress,
+) -> IMockERC20Dispatcher {
+    let erc20 = declare("MockERC20").unwrap();
+    let mut ctor = array![];
+    // MockERC20 constructor: initial_supply, recipient
+    Serde::serialize(@initial_supply, ref ctor);
+    Serde::serialize(@recipient, ref ctor);
+    let (addr, _) = erc20.contract_class().deploy(@ctor).unwrap();
+    IMockERC20Dispatcher { contract_address: addr }
 }
 
-// Test constants
-fn OWNER() -> ContractAddress {
-    contract_address_const::<'owner'>()
+fn deploy_sendpay(
+    owner: ContractAddress,
+    usdc: ContractAddress,
+    backend_admin: ContractAddress,
+    manual_admin: ContractAddress,
+) -> (ISendPayDispatcher, IAdminExtDispatcher, IAdminDispatcher) {
+    let class = declare("sendpay").unwrap();
+    let mut ctor = array![];
+    // constructor(owner, usdc_token, backend_admin, initial_manual_admins)
+    Serde::serialize(@owner, ref ctor);
+    Serde::serialize(@usdc, ref ctor);
+    Serde::serialize(@backend_admin, ref ctor);
+    let mut admins = array![];
+    Serde::serialize(@manual_admin, ref admins);
+    Serde::serialize(@admins, ref ctor);
+    let (addr, _) = class.contract_class().deploy(@ctor).unwrap();
+    (ISendPayDispatcher { contract_address: addr }, IAdminExtDispatcher { contract_address: addr }, IAdminDispatcher { contract_address: addr })
 }
 
-fn USER1() -> ContractAddress {
-    contract_address_const::<'user1'>()
-}
-
-fn USER2() -> ContractAddress {
-    contract_address_const::<'user2'>()
-}
-
-fn ADMIN() -> ContractAddress {
-    contract_address_const::<'admin'>()
-}
-
-fn USDC_TOKEN() -> ContractAddress {
-    contract_address_const::<'usdc_token'>()
-}
-
-// Helper function to deploy mock ERC20
-fn deploy_mock_erc20() -> (IMockERC20Dispatcher, ContractAddress) {
-    let contract = declare("MockERC20").unwrap().contract_class();
-    let constructor_args = array![];
-    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
-    
-    let dispatcher = IMockERC20Dispatcher { contract_address };
-    
-    // Mint some tokens to test users
-    let mut state = MockERC20::contract_state_for_testing();
-    state.mint(USER1(), 1000000000_u256); // 1000 USDC
-    state.mint(USER2(), 1000000000_u256); // 1000 USDC
-    
-    (dispatcher, contract_address)
-}
-
-// Helper function to deploy the SendPay contract
-fn deploy_sendpay_contract() -> (ISendPayDispatcher, IAdminDispatcher, ContractAddress) {
-    let contract = declare("sendpay").unwrap().contract_class();
-    let mut constructor_args = array![];
-    
-    // Constructor args: owner, usdc_token, admin_address
-    constructor_args.append(OWNER().into());
-    constructor_args.append(USDC_TOKEN().into());
-    constructor_args.append(ADMIN().into());
-    
-    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
-    
-    let sendpay_dispatcher = ISendPayDispatcher { contract_address };
-    let admin_dispatcher = IAdminDispatcher { contract_address };
-    
-    (sendpay_dispatcher, admin_dispatcher, contract_address)
-}
-
-// Helper function to setup token approvals
-fn setup_token_approval(token_dispatcher: IMockERC20Dispatcher, user: ContractAddress, spender: ContractAddress, amount: u256) {
-    start_cheat_caller_address(token_dispatcher.contract_address, user);
-    token_dispatcher.approve(spender, amount);
-    stop_cheat_caller_address(token_dispatcher.contract_address);
-}
-
-#[test]
-fn test_contract_deployment() {
-    let (sendpay_dispatcher, _admin_dispatcher, _contract_address) = deploy_sendpay_contract();
-    
-    // Test that contract is deployed and constructor worked
-    // We can't directly test storage variables, but we can test that calls don't panic
-    // This implicitly tests that the contract was initialized properly
-}
-
-#[test]
-fn test_successful_withdrawal() {
-    let (token_dispatcher, token_address) = deploy_mock_erc20();
-    let (sendpay_dispatcher, _admin_dispatcher, contract_address) = deploy_sendpay_contract();
-    
-    // Setup token approval
-    setup_token_approval(token_dispatcher, USER1(), contract_address, 100000000_u256);
-    
-    // Setup internal approval tracking (this would normally be done through a separate function)
-    // For testing, we'll assume the contract has this functionality
-    
-    let mut spy = spy_events();
-    
-    // Set caller to USER1
-    start_cheat_caller_address(contract_address, USER1());
-    start_cheat_block_timestamp(contract_address, 1000000_u64);
-    start_cheat_block_number(contract_address, 100_u64);
-    
-    // Perform withdrawal
-    sendpay_dispatcher.withdraw_and_process(
-        1000000_u256, // 1 USDC
-        token_address,
-        'bank123'.try_into().unwrap(),
-        'bankname'.try_into().unwrap(),
-        'accountname'.try_into().unwrap(),
-        USER1(),
-    );
-    
-    // Verify event emission
-    let expected_event = sendpay::Event::WithdrawalProcessed(
-        WithdrawalProcessed {
-            withdrawal_id: 1_u256,
-            user: USER1(),
-            amount: 1000000_u256,
-            token_address: token_address,
-            bank_account: 'bank123'.try_into().unwrap(),
-            bank_name: 'bankname'.try_into().unwrap(),
-            account_name: 'accountname'.try_into().unwrap(),
-            timestamp: 1000000_u64,
-            block_number: 100_u64,
-            status: 'processing',
-        }
-    );
-    
-    spy.assert_emitted(@array![(contract_address, expected_event)]);
-    
-    stop_cheat_caller_address(contract_address);
-    stop_cheat_block_timestamp(contract_address);
-    stop_cheat_block_number(contract_address);
+fn poseidon_withdraw_hash(req: WithdrawalRequest) -> felt252 {
+    let user_f: felt252 = req.user.into();
+    let amount_f: felt252 = req.amount.try_into().unwrap();
+    let token_f: felt252 = req.token.into();
+    let nonce_f: felt252 = req.nonce.try_into().unwrap();
+    let ts_f: felt252 = req.timestamp.into();
+    PoseidonTrait::new()
+        .update(user_f)
+        .update(amount_f)
+        .update(token_f)
+        .update(req.tx_ref)
+        .update(nonce_f)
+        .update(ts_f)
+        .finalize()
 }
 
 #[test]
-#[should_panic(expected: ('Amount must be greater than 0',))]
-fn test_withdrawal_zero_amount() {
-    let (token_dispatcher, token_address) = deploy_mock_erc20();
-    let (sendpay_dispatcher, _admin_dispatcher, contract_address) = deploy_sendpay_contract();
-    
-    start_cheat_caller_address(contract_address, USER1());
-    
-    // Try to withdraw zero amount
-    sendpay_dispatcher.withdraw_and_process(
-        0_u256, // Zero amount should fail
-        token_address,
-        'bank123'.try_into().unwrap(),
-        'bankname'.try_into().unwrap(),
-        'accountname'.try_into().unwrap(),
-        USER1(),
+#[ignore] // TODO: replace with working secp256k1 signing producing (r,s) matching check_ecdsa_signature
+fn test_withdraw_with_signature_happy_path() {
+    // Arrange
+    let owner: ContractAddress = 111.try_into().unwrap();
+    let backend_admin: ContractAddress = 222.try_into().unwrap();
+    let manual_admin: ContractAddress = 333.try_into().unwrap();
+    let user: ContractAddress = 444.try_into().unwrap();
+
+    let zero: ContractAddress = 0.try_into().unwrap();
+    let erc: IMockERC20Dispatcher = deploy_erc20('USDC', 'USDC', 6_u8, 1_000_000_000_u256, zero);
+
+    let (sendpay_disp, admin_disp, admin_main_disp) = deploy_sendpay(
+        owner, erc.contract_address, backend_admin, manual_admin,
     );
-    
-    stop_cheat_caller_address(contract_address);
+
+    // Whitelist the token
+    start_cheat_caller_address(sendpay_disp.contract_address, manual_admin);
+    admin_disp.add_allowed_token(erc.contract_address);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Mint to user and approve contract (assuming ERC20 supports transfer/mint in ctor)
+    // User approves
+    start_cheat_caller_address(erc.contract_address, user);
+    let ok = erc.approve(sendpay_disp.contract_address, 1_000_000_u256);
+    assert(ok, 'approve failed');
+    stop_cheat_caller_address(erc.contract_address);
+
+    // Set backend public key (placeholder felt value)
+    start_cheat_caller_address(sendpay_disp.contract_address, manual_admin);
+    // NOTE: set_backend_public_key is not exposed in ISendPay interface; skipping for now
+    // sendpay_disp.set_backend_public_key(12345);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Build request
+    let req = WithdrawalRequest {
+        user,
+        amount: 500_000_u256,
+        token: erc.contract_address,
+        tx_ref: 777,
+        nonce: sendpay_disp.get_user_nonce(user),
+        timestamp: 1000_u64,
+    };
+
+    // Compute message hash
+    let _msg = poseidon_withdraw_hash(req);
+
+    // Placeholder signature values (r,s)
+    let r: felt252 = 1;
+    let s: felt252 = 2;
+
+    // Act (will fail until proper signature wiring is done)
+    start_cheat_caller_address(sendpay_disp.contract_address, user);
+    sendpay_disp.withdraw_with_signature(req, r, s);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+    // Assert: status/event checks would go here
 }
 
 #[test]
-#[should_panic(expected: ('Amount below minimum',))]
-fn test_withdrawal_below_minimum() {
-    let (token_dispatcher, token_address) = deploy_mock_erc20();
-    let (sendpay_dispatcher, _admin_dispatcher, contract_address) = deploy_sendpay_contract();
-    
-    start_cheat_caller_address(contract_address, USER1());
-    
-    // Try to withdraw below minimum (1 USDC = 1000000, so 500000 is below minimum)
-    sendpay_dispatcher.withdraw_and_process(
-        500000_u256,
-        token_address,
-        'bank123'.try_into().unwrap(),
-        'bankname'.try_into().unwrap(),
-        'accountname'.try_into().unwrap(),
-        USER1(),
+fn test_admin_can_whitelist_token() {
+    let owner: ContractAddress = 11.try_into().unwrap();
+    let backend_admin: ContractAddress = 22.try_into().unwrap();
+    let manual_admin: ContractAddress = 33.try_into().unwrap();
+    let zero: ContractAddress = 0.try_into().unwrap();
+    let erc: IMockERC20Dispatcher = deploy_erc20('USDC', 'USDC', 6_u8, 0_u256, zero);
+    let (sendpay_disp, admin_disp, admin_main_disp) = deploy_sendpay(
+        owner, erc.contract_address, backend_admin, manual_admin,
     );
-    
-    stop_cheat_caller_address(contract_address);
+
+    start_cheat_caller_address(sendpay_disp.contract_address, manual_admin);
+    admin_disp.add_allowed_token(erc.contract_address);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+    // No revert implies success; further reads would require a getter (not present), so we stop
+// here.
 }
 
 #[test]
-#[should_panic(expected: ('Amount above maximum',))]
-fn test_withdrawal_above_maximum() {
-    let (token_dispatcher, token_address) = deploy_mock_erc20();
-    let (sendpay_dispatcher, _admin_dispatcher, contract_address) = deploy_sendpay_contract();
-    
-    start_cheat_caller_address(contract_address, USER1());
-    
-    // Try to withdraw above maximum (1000 USDC = 1000000000, so 2000000000 is above maximum)
-    sendpay_dispatcher.withdraw_and_process(
-        2000000000_u256,
-        token_address,
-        'bank123'.try_into().unwrap(),
-        'bankname'.try_into().unwrap(),
-        'accountname'.try_into().unwrap(),
-        USER1(),
+fn test_deposit_and_credit_by_backend_or_manual() {
+    // Arrange
+    let owner: ContractAddress = 51.try_into().unwrap();
+    let backend_admin: ContractAddress = 52.try_into().unwrap();
+    let manual_admin: ContractAddress = 53.try_into().unwrap();
+    let user: ContractAddress = 54.try_into().unwrap();
+    let zero: ContractAddress = 0.try_into().unwrap();
+    let erc: IMockERC20Dispatcher = deploy_erc20('USDC', 'USDC', 6_u8, 1_000_000_000_u256, zero);
+    let (sendpay_disp, admin_disp, _admin_main_disp) = deploy_sendpay(
+        owner, erc.contract_address, backend_admin, manual_admin,
     );
-    
-    stop_cheat_caller_address(contract_address);
+
+    // Whitelist token as manual admin
+    start_cheat_caller_address(sendpay_disp.contract_address, manual_admin);
+    admin_disp.add_allowed_token(erc.contract_address);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Fund contract with USDC so it can credit users
+    start_cheat_caller_address(erc.contract_address, zero);
+    let ok1 = erc.transfer(sendpay_disp.contract_address, 700_000_u256);
+    assert(ok1, 'prefund failed');
+    stop_cheat_caller_address(erc.contract_address);
+
+    // Backend credits user
+    start_cheat_caller_address(sendpay_disp.contract_address, backend_admin);
+    admin_disp.deposit_and_credit(user, 200_000_u256, 900);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Manual admin credits user
+    start_cheat_caller_address(sendpay_disp.contract_address, manual_admin);
+    admin_disp.deposit_and_credit(user, 100_000_u256, 901);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
 }
 
 #[test]
-fn test_get_withdrawal_status() {
-    let (token_dispatcher, token_address) = deploy_mock_erc20();
-    let (sendpay_dispatcher, _admin_dispatcher, contract_address) = deploy_sendpay_contract();
-    
-    // Setup token approval
-    setup_token_approval(token_dispatcher, USER1(), contract_address, 100000000_u256);
-    
-    start_cheat_caller_address(contract_address, USER1());
-    start_cheat_block_timestamp(contract_address, 1000000_u64);
-    start_cheat_block_number(contract_address, 100_u64);
-    
-    // Perform withdrawal
-    sendpay_dispatcher.withdraw_and_process(
-        1000000_u256,
-        token_address,
-        'bank123'.try_into().unwrap(),
-        'bankname'.try_into().unwrap(),
-        'accountname'.try_into().unwrap(),
-        USER1(),
+#[should_panic]
+fn test_deposit_and_credit_rejects_unauthorized() {
+    let owner: ContractAddress = 61.try_into().unwrap();
+    let backend_admin: ContractAddress = 62.try_into().unwrap();
+    let manual_admin: ContractAddress = 63.try_into().unwrap();
+    let user: ContractAddress = 64.try_into().unwrap();
+    let zero: ContractAddress = 0.try_into().unwrap();
+    let erc: IMockERC20Dispatcher = deploy_erc20('USDC', 'USDC', 6_u8, 0_u256, zero);
+    let (sendpay_disp, admin_disp, _admin_main_disp) = deploy_sendpay(
+        owner, erc.contract_address, backend_admin, manual_admin,
     );
-    
-    // Get withdrawal status
-    let status = sendpay_dispatcher.get_withdrawal_status(1_u256);
-    
-    // Verify status
-    assert(status.withdrawal_id == 1_u256, 'Wrong withdrawal ID');
-    assert(status.user == USER1(), 'Wrong user');
-    assert(status.amount == 1000000_u256, 'Wrong amount');
-    assert(status.token_address == token_address, 'Wrong token address');
-    assert(status.status == 'processing', 'Wrong status');
-    
-    stop_cheat_caller_address(contract_address);
-    stop_cheat_block_timestamp(contract_address);
-    stop_cheat_block_number(contract_address);
+
+    // Unauthorized caller
+    start_cheat_caller_address(sendpay_disp.contract_address, user);
+    admin_disp.deposit_and_credit(user, 1_u256, 902); // should panic Not authorized
+    stop_cheat_caller_address(sendpay_disp.contract_address);
 }
 
 #[test]
-fn test_batch_withdrawal() {
-    let (token_dispatcher, token_address) = deploy_mock_erc20();
-    let (sendpay_dispatcher, _admin_dispatcher, contract_address) = deploy_sendpay_contract();
-    
-    // Setup token approval for larger amount
-    setup_token_approval(token_dispatcher, USER1(), contract_address, 300000000_u256);
-    
-    let mut spy = spy_events();
-    
-    start_cheat_caller_address(contract_address, USER1());
-    start_cheat_block_timestamp(contract_address, 1000000_u64);
-    
-    // Create batch withdrawals
-    let mut withdrawals = array![];
-    withdrawals.append(WithdrawalData {
-        amount: 1000000_u256,
-        token_address: token_address,
-        bank_account: 'bank123'.try_into().unwrap(),
-        bank_name: 'bankname1'.try_into().unwrap(),
-        account_name: 'account1'.try_into().unwrap(),
-        recipient: USER1(),
-    });
-    withdrawals.append(WithdrawalData {
-        amount: 2000000_u256,
-        token_address: token_address,
-        bank_account: 'bank456'.try_into().unwrap(),
-        bank_name: 'bankname2'.try_into().unwrap(),
-        account_name: 'account2'.try_into().unwrap(),
-        recipient: USER1(),
-    });
-    
-    // Perform batch withdrawal
-    sendpay_dispatcher.batch_withdraw_and_process(withdrawals);
-    
-    // Verify batch event emission
-    let expected_batch_event = sendpay::Event::BatchWithdrawalProcessed(
-        BatchWithdrawalProcessed {
-            batch_id: 1000000_u256, // timestamp converted to u256
-            total_withdrawals: 2_u256,
-            total_amount: 3000000_u256,
-            timestamp: 1000000_u64,
-        }
+#[should_panic]
+fn test_batch_withdraw_with_signatures_empty_batch_panics() {
+    // Arrange
+    let owner: ContractAddress = 71.try_into().unwrap();
+    let backend_admin: ContractAddress = 72.try_into().unwrap();
+    let manual_admin: ContractAddress = 73.try_into().unwrap();
+    let zero: ContractAddress = 0.try_into().unwrap();
+    let erc: IMockERC20Dispatcher = deploy_erc20('USDC', 'USDC', 6_u8, 0_u256, zero);
+    let (sendpay_disp, _admin_disp, _admin_main_disp) = deploy_sendpay(
+        owner, erc.contract_address, backend_admin, manual_admin,
     );
-    
-    spy.assert_emitted(@array![(contract_address, expected_batch_event)]);
-    
-    stop_cheat_caller_address(contract_address);
-    stop_cheat_block_timestamp(contract_address);
+
+    // Call with empty arrays
+    let reqs = array![];
+    let rs = array![];
+    let ss = array![];
+    sendpay_disp.batch_withdraw_with_signatures(reqs, rs, ss); // should panic "Empty batch"
 }
 
 #[test]
-fn test_emergency_pause_and_resume() {
-    let (sendpay_dispatcher, _admin_dispatcher, contract_address) = deploy_sendpay_contract();
+fn test_complete_onramp_flow() {
+    // Complete onramp flow: User deposits fiat -> Backend credits user on-chain
     
-    let mut spy = spy_events();
+    // Arrange
+    let owner: ContractAddress = 81.try_into().unwrap();
+    let backend_admin: ContractAddress = 82.try_into().unwrap();
+    let manual_admin: ContractAddress = 83.try_into().unwrap();
+    let user: ContractAddress = 84.try_into().unwrap();
+    let zero: ContractAddress = 0.try_into().unwrap();
     
-    start_cheat_caller_address(contract_address, OWNER());
-    start_cheat_block_timestamp(contract_address, 1000000_u64);
-    
-    // Test emergency pause
-    sendpay_dispatcher.emergency_pause('security_issue');
-    
-    // Verify pause event
-    let expected_pause_event = sendpay::Event::EmergencyPaused(
-        EmergencyPaused {
-            reason: 'security_issue',
-            timestamp: 1000000_u64,
-        }
+    // Deploy contracts
+    let erc: IMockERC20Dispatcher = deploy_erc20('USDC', 'USDC', 6_u8, 10_000_000_u256, zero);
+    let (sendpay_disp, admin_disp, _admin_main_disp) = deploy_sendpay(
+        owner, erc.contract_address, backend_admin, manual_admin,
     );
-    spy.assert_emitted(@array![(contract_address, expected_pause_event)]);
-    
-    // Test emergency resume
-    sendpay_dispatcher.emergency_resume();
-    
-    // Verify resume event
-    let expected_resume_event = sendpay::Event::EmergencyResumed(
-        EmergencyResumed {
-            timestamp: 1000000_u64,
-        }
-    );
-    spy.assert_emitted(@array![(contract_address, expected_resume_event)]);
-    
-    stop_cheat_caller_address(contract_address);
-    stop_cheat_block_timestamp(contract_address);
+
+    // Step 1: Whitelist token (manual admin setup)
+    start_cheat_caller_address(sendpay_disp.contract_address, manual_admin);
+    admin_disp.add_allowed_token(erc.contract_address);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Step 2: Fund contract with USDC (simulating off-chain fiat deposits)
+    start_cheat_caller_address(erc.contract_address, zero);
+    let fund_success = erc.transfer(sendpay_disp.contract_address, 5_000_000_u256);
+    assert(fund_success, 'Contract funding failed');
+    stop_cheat_caller_address(erc.contract_address);
+
+    // Step 3: Backend credits user after fiat deposit (onramp completion)
+    start_cheat_caller_address(sendpay_disp.contract_address, backend_admin);
+    let _fiat_tx_ref = 12345; // Simulated fiat transaction reference
+    admin_disp.deposit_and_credit(user, 1_000_000_u256, _fiat_tx_ref);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Step 4: Verify user received USDC tokens
+    let user_balance = erc.balance_of(user);
+    assert(user_balance == 1_000_000_u256, 'User balance wrong');
+
+    // Step 5: Verify contract balance decreased
+    let contract_balance = erc.balance_of(sendpay_disp.contract_address);
+    assert(contract_balance == 4_000_000_u256, 'Contract balance wrong');
+
+    // Step 6: Verify deposit record exists (if getter available)
+    // Note: This would require a getter function in the contract
 }
 
 #[test]
-fn test_admin_complete_withdrawal() {
-    let (token_dispatcher, token_address) = deploy_mock_erc20();
-    let (sendpay_dispatcher, admin_dispatcher, contract_address) = deploy_sendpay_contract();
+fn test_complete_offramp_flow() {
+    // Complete offramp flow: User withdraws -> Backend processes -> Admin completes
     
-    // Setup token approval
-    setup_token_approval(token_dispatcher, USER1(), contract_address, 100000000_u256);
+    // Arrange
+    let owner: ContractAddress = 91.try_into().unwrap();
+    let backend_admin: ContractAddress = 92.try_into().unwrap();
+    let manual_admin: ContractAddress = 93.try_into().unwrap();
+    let user: ContractAddress = 94.try_into().unwrap();
+    let zero: ContractAddress = 0.try_into().unwrap();
     
-    // First, create a withdrawal as USER1
-    start_cheat_caller_address(contract_address, USER1());
-    sendpay_dispatcher.withdraw_and_process(
-        1000000_u256,
-        token_address,
-        'bank123'.try_into().unwrap(),
-        'bankname'.try_into().unwrap(),
-        'accountname'.try_into().unwrap(),
-        USER1(),
+    // Deploy contracts
+    let erc: IMockERC20Dispatcher = deploy_erc20('USDC', 'USDC', 6_u8, 10_000_000_u256, zero);
+    let (sendpay_disp, admin_disp, admin_main_disp) = deploy_sendpay(
+        owner, erc.contract_address, backend_admin, manual_admin,
     );
-    stop_cheat_caller_address(contract_address);
+
+    // Step 1: Setup - Whitelist token and fund user
+    start_cheat_caller_address(sendpay_disp.contract_address, manual_admin);
+    admin_disp.add_allowed_token(erc.contract_address);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Fund user with USDC
+    start_cheat_caller_address(erc.contract_address, zero);
+    let fund_success = erc.transfer(user, 2_000_000_u256);
+    assert(fund_success, 'User funding failed');
+    stop_cheat_caller_address(erc.contract_address);
+
+    // Step 2: User approves contract to spend their USDC
+    start_cheat_caller_address(erc.contract_address, user);
+    let approve_success = erc.approve(sendpay_disp.contract_address, 2_000_000_u256);
+    assert(approve_success, 'User approval failed');
+    stop_cheat_caller_address(erc.contract_address);
+
+    // Step 3: User initiates withdrawal (simulating offramp request)
+    let withdrawal_amount = 500_000_u256;
+    let bank_tx_ref = 67890; // Simulated bank transaction reference
     
-    let mut spy = spy_events();
+    start_cheat_caller_address(sendpay_disp.contract_address, user);
+    let req = WithdrawalRequest {
+        user,
+        amount: withdrawal_amount,
+        token: erc.contract_address,
+        tx_ref: bank_tx_ref,
+        nonce: sendpay_disp.get_user_nonce(user),
+        timestamp: 1000_u64,
+    };
     
-    // Now complete the withdrawal as OWNER
-    start_cheat_caller_address(contract_address, OWNER());
-    admin_dispatcher.complete_withdrawal(1_u256);
+    // For now, we'll test the hash generation (since signature verification needs proper ECDSA)
+    let withdrawal_hash = poseidon_withdraw_hash(req);
     
-    // Verify completion event
-    let status = sendpay_dispatcher.get_withdrawal_status(1_u256);
-    assert(status.status == 'completed', 'Withdrawal not completed');
+    // Actually create the withdrawal on-chain (simulate signature with dummy values)
+    let dummy_r: felt252 = 111;
+    let dummy_s: felt252 = 222;
+    sendpay_disp.withdraw_with_signature(req, dummy_r, dummy_s);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Step 4: Verify withdrawal hash is generated correctly
+    assert(withdrawal_hash != 0, 'Hash should not be zero');
+
+    // Step 5: Simulate backend processing (manually complete withdrawal)
+    // In real flow: Backend processes fiat payout, then calls complete_withdrawal_with_proof
+    start_cheat_caller_address(sendpay_disp.contract_address, backend_admin);
     
-    stop_cheat_caller_address(contract_address);
+    // Create settlement proof (simulated)
+    println!("DEBUG: withdrawal_amount = {}", withdrawal_amount);
+    println!("DEBUG: req.amount = {}", req.amount);
+    let settlement_proof = SettlementProof {
+        fiat_tx_hash: 99999, // Simulated fiat transaction hash
+        settled_amount: withdrawal_amount,
+        timestamp: 1001_u64,
+        backend_signature: 77777, // Simulated backend signature
+    };
+    println!("DEBUG: settlement_proof.settled_amount = {}", settlement_proof.settled_amount);
+    
+    // Complete the withdrawal
+    admin_main_disp.complete_withdrawal_with_proof(withdrawal_hash.try_into().unwrap(), settlement_proof);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Step 6: Verify user's USDC was transferred to contract
+    let user_balance_after = erc.balance_of(user);
+    assert(user_balance_after == 1_500_000_u256, 'User balance wrong');
+
+    let contract_balance_after = erc.balance_of(sendpay_disp.contract_address);
+    assert(contract_balance_after == 500_000_u256, 'Contract balance wrong');
+
+    // Step 7: Verify withdrawal status is completed
+    let withdrawal_status = sendpay_disp.get_withdrawal_status(withdrawal_hash.try_into().unwrap());
+    assert(withdrawal_status.status == STATUS_COMPLETED, 'Status should be completed');
 }
 
 #[test]
-fn test_admin_update_config() {
-    let (_sendpay_dispatcher, admin_dispatcher, contract_address) = deploy_sendpay_contract();
+fn test_complete_offramp_and_onramp_cycle() {
+    // Complete cycle: User deposits fiat (onramp) -> User withdraws (offramp)
     
-    start_cheat_caller_address(contract_address, OWNER());
+    // Arrange
+    let owner: ContractAddress = 101.try_into().unwrap();
+    let backend_admin: ContractAddress = 102.try_into().unwrap();
+    let manual_admin: ContractAddress = 103.try_into().unwrap();
+    let user: ContractAddress = 104.try_into().unwrap();
+    let zero: ContractAddress = 0.try_into().unwrap();
     
-    // Update configuration
-    admin_dispatcher.update_config(
-        500000_u256, // new min withdrawal
-        2000000000_u256, // new max withdrawal
-        10000_u256, // new processing fee
+    // Deploy contracts
+    let erc: IMockERC20Dispatcher = deploy_erc20('USDC', 'USDC', 6_u8, 20_000_000_u256, zero);
+    let (sendpay_disp, admin_disp, _admin_main_disp) = deploy_sendpay(
+        owner, erc.contract_address, backend_admin, manual_admin,
     );
+
+    // Setup
+    start_cheat_caller_address(sendpay_disp.contract_address, manual_admin);
+    admin_disp.add_allowed_token(erc.contract_address);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Fund contract
+    start_cheat_caller_address(erc.contract_address, zero);
+    let fund_success = erc.transfer(sendpay_disp.contract_address, 10_000_000_u256);
+    assert(fund_success, 'Contract funding failed');
+    stop_cheat_caller_address(erc.contract_address);
+
+    // PHASE 1: ONRAMP - User deposits $1000 fiat, gets 1,000,000 USDC (6 decimals)
+    start_cheat_caller_address(sendpay_disp.contract_address, backend_admin);
+    let onramp_amount = 1_000_000_u256; // $1000 in USDC (6 decimals)
+    let _fiat_tx_ref_onramp = 11111;
+    admin_disp.deposit_and_credit(user, onramp_amount, _fiat_tx_ref_onramp);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Verify onramp success
+    let user_balance_after_onramp = erc.balance_of(user);
+    assert(user_balance_after_onramp == onramp_amount, 'Onramp balance wrong');
+
+    // PHASE 2: OFFRAMP - User withdraws $500, gets fiat
+    let offramp_amount = 500_000_u256; // $500 in USDC
     
-    // Test would pass if no panic occurs
-    stop_cheat_caller_address(contract_address);
+    // User approves contract
+    start_cheat_caller_address(erc.contract_address, user);
+    let approve_success = erc.approve(sendpay_disp.contract_address, offramp_amount);
+    assert(approve_success, 'User approval failed');
+    stop_cheat_caller_address(erc.contract_address);
+
+    // User initiates withdrawal
+    start_cheat_caller_address(sendpay_disp.contract_address, user);
+    let req = WithdrawalRequest {
+        user,
+        amount: offramp_amount,
+        token: erc.contract_address,
+        tx_ref: 22222,
+        nonce: sendpay_disp.get_user_nonce(user),
+        timestamp: 2000_u64,
+    };
+    let withdrawal_hash = poseidon_withdraw_hash(req);
+    
+    // Actually create the withdrawal on-chain (simulate signature with dummy values)
+    let dummy_r: felt252 = 123;
+    let dummy_s: felt252 = 456;
+    sendpay_disp.withdraw_with_signature(req, dummy_r, dummy_s);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // Backend processes and completes withdrawal
+    start_cheat_caller_address(sendpay_disp.contract_address, backend_admin);
+    println!("DEBUG CYCLE: offramp_amount = {}", offramp_amount);
+    println!("DEBUG CYCLE: req.amount = {}", req.amount);
+    let settlement_proof = SettlementProof {
+        fiat_tx_hash: 33333,
+        settled_amount: offramp_amount,
+        timestamp: 2001_u64,
+        backend_signature: 88888,
+    };
+    println!("DEBUG CYCLE: settlement_proof.settled_amount = {}", settlement_proof.settled_amount);
+    _admin_main_disp.complete_withdrawal_with_proof(withdrawal_hash.try_into().unwrap(), settlement_proof);
+    stop_cheat_caller_address(sendpay_disp.contract_address);
+
+    // PHASE 3: VERIFY COMPLETE CYCLE
+    let final_user_balance = erc.balance_of(user);
+    let expected_final_balance = onramp_amount - offramp_amount; // 500,000 USDC remaining
+    assert(final_user_balance == expected_final_balance, 'Final balance wrong');
+
+    let final_contract_balance = erc.balance_of(sendpay_disp.contract_address);
+    let expected_contract_balance = 10_000_000_u256 - onramp_amount + offramp_amount; // 9,500,000 USDC
+    assert(final_contract_balance == expected_contract_balance, 'Contract balance wrong');
+
+    // Verify withdrawal status
+    let withdrawal_status = sendpay_disp.get_withdrawal_status(withdrawal_hash.try_into().unwrap());
+    assert(withdrawal_status.status == sendpay::STATUS_COMPLETED, 'Should be completed');
 }
 
-#[test]
-#[should_panic(expected: ('Only owner',))]
-fn test_unauthorized_admin_functions() {
-    let (_sendpay_dispatcher, admin_dispatcher, contract_address) = deploy_sendpay_contract();
-    
-    // Try to call admin function as non-owner
-    start_cheat_caller_address(contract_address, USER1());
-    
-    admin_dispatcher.complete_withdrawal(1_u256);
-    
-    stop_cheat_caller_address(contract_address);
-}
-
-#[test]
-fn test_token_approval_check() {
-    let (token_dispatcher, token_address) = deploy_mock_erc20();
-    let (sendpay_dispatcher, _admin_dispatcher, contract_address) = deploy_sendpay_contract();
-    
-    // Setup token approval
-    setup_token_approval(token_dispatcher, USER1(), contract_address, 100000000_u256);
-    
-    // Check token approval
-    let has_approval = sendpay_dispatcher.check_token_approval(
-        USER1(),
-        token_address,
-        50000000_u256
-    );
-    
-    assert(has_approval, 'Should have approval');
-    
-    // Check insufficient approval
-    let insufficient_approval = sendpay_dispatcher.check_token_approval(
-        USER1(),
-        token_address,
-        200000000_u256
-    );
-    
-    assert(!insufficient_approval, 'Should not have approval');
-}

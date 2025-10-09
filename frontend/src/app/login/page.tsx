@@ -158,33 +158,16 @@ export default function LoginPage() {
 		}
 
 		try {
-			const res = await api.cavos.login(formData.email, formData.password);
-			const data = res.data;
-			const cavosData = data?.data || data;
-
-			//TODO: reduce it to 1 day for security
-			// Store tokens in cookies (more secure than localStorage)
+			const res = await api.auth.login(formData.email, formData.password);
+			// Store JWT token in cookies
 			if (res.token) {
 				cookies.set("jwt", res.token, 7); // 7 days
-			}
-			const accessToken =
-				cavosData?.authData?.accessToken || cavosData?.access_token;
-			const refreshToken =
-				cavosData?.authData?.refreshToken || cavosData?.refresh_token;
-			const walletAddr = normalizeHex(cavosData?.wallet?.address || "");
-			if (accessToken) {
-				cookies.set("accessToken", accessToken, 1);
-			}
-			if (refreshToken) {
-				cookies.set("refreshToken", refreshToken, 30);
-			}
-			if (walletAddr) {
-				cookies.set("walletAddress", walletAddr, 7);
 			}
 
 			// Store user info
 			if (res.user) {
 				cookies.set("user", JSON.stringify(res.user), 7);
+				localStorage.setItem("user", JSON.stringify(res.user));
 			}
 
 			toast({
@@ -262,31 +245,16 @@ export default function LoginPage() {
 		}
 
 		try {
-			const res = await api.cavos.signup(formData.email, formData.password);
-			const cavosData = res.data?.data || res.data;
-
-			// Store tokens in cookies
+			const res = await api.auth.signup(formData.email, formData.password);
+			// Store JWT token in cookies
 			if (res.token) {
 				cookies.set("jwt", res.token, 7); // 7 days
-			}
-			const accessToken =
-				cavosData?.authData?.accessToken || cavosData?.access_token;
-			const refreshToken =
-				cavosData?.authData?.refreshToken || cavosData?.refresh_token;
-			const walletAddr = normalizeHex(cavosData?.wallet?.address || "");
-			if (accessToken) {
-				cookies.set("accessToken", accessToken, 1); // 1 day
-			}
-			if (refreshToken) {
-				cookies.set("refreshToken", refreshToken, 30); // 30 days
-			}
-			if (walletAddr) {
-				cookies.set("walletAddress", walletAddr, 7);
 			}
 
 			// Store user info
 			if (res.user) {
 				cookies.set("user", JSON.stringify(res.user), 7);
+				localStorage.setItem("user", JSON.stringify(res.user));
 			}
 
 			toast({

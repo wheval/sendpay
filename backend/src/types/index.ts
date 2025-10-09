@@ -6,7 +6,9 @@ export interface IUser {
   email: string;
   name: string;
   phone?: string;
-  cavosWalletAddress?: string;
+  chipiWalletAddress?: string;
+  chipiPublicKey?: string;
+  chipiEncryptedPrivateKey?: string; // Optional backup blob
   starknetNetwork?: 'sepolia' | 'mainnet';
   bankDetails: {
     bankName: string;
@@ -132,7 +134,9 @@ export interface IUserDocument extends Document {
   email: string;
   name: string;
   phone?: string;
-  cavosWalletAddress: string;
+  chipiWalletAddress?: string;
+  chipiPublicKey?: string;
+  chipiEncryptedPrivateKey?: string; // Optional backup blob
   starknetNetwork?: 'sepolia' | 'mainnet';
   bankDetails: {
     bankName: string;

@@ -13,5 +13,8 @@
   "aliases": {
     "components": "@/components",
     "utils": "@/lib/utils"
+  },
+  "registries": {
+    "@chipi": "https://mcp.chipipay.com/r/{name}.json"
   }
 }

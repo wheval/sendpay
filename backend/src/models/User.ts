@@ -19,10 +19,21 @@ const UserSchema = new Schema<IUserDocument>({
     required: false,
     trim: true
   },
-  cavosWalletAddress: {
+  chipiWalletAddress: {
     type: String,
     required: false,
     sparse: true,
+    unique: true,
+    trim: true
+  },
+  chipiPublicKey: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  chipiEncryptedPrivateKey: {
+    type: String,
+    required: false,
     trim: true
   },
   starknetNetwork: {
@@ -66,7 +77,7 @@ const UserSchema = new Schema<IUserDocument>({
 
 // Indexes for better query performance
 UserSchema.index({ email: 1 }, { unique: true });
-UserSchema.index({ cavosWalletAddress: 1 }, { unique: true, sparse: true });
+UserSchema.index({ chipiWalletAddress: 1 }, { unique: true, sparse: true });
 UserSchema.index({ 'bankDetails.accountNumber': 1 });
 
 // Virtual for formatted balance

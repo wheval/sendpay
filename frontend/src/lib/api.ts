@@ -1,5 +1,7 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3001/api';
 
+type Json = Record<string, unknown>;
+
 async function request(path: string, options: RequestInit = {}) {
   const url = `${API_BASE}${path}`
 
@@ -25,31 +27,34 @@ async function request(path: string, options: RequestInit = {}) {
 }
 
 export const api = {
-  // Cavos endpoints
-  cavos: {
-    signup: (email: string, password: string) =>
-      request('/cavos/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
-    login: (email: string, password: string) =>
-      request('/cavos/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
-    balance: (address: string, tokenAddress: string, decimals = '18', token?: string) =>
-      request(`/cavos/balance/${address}?tokenAddress=${encodeURIComponent(tokenAddress)}&decimals=${decimals}`, {
+  // ChipiPay endpoints
+  chipipay: {
+    balance: (address: string, tokenAddress: string, token?: string) =>
+      request(`/chipipay/balance/${address}?tokenAddress=${encodeURIComponent(tokenAddress)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       }),
-    execute: (address: string, calls: any[], accessToken: string, token?: string) =>
-      request('/cavos/execute', {
+    walletSync: (walletAddress: string, publicKey: string, token?: string) =>
+      request('/chipipay/wallet/sync', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: JSON.stringify({ address, calls, accessToken })
-      })
+        body: JSON.stringify({ walletAddress, publicKey })
+      }),
+    walletBackup: async (_token?: string) => {
+      throw new Error('Use client-side Chipi SDK for wallet backup.');
+    }
   },
   
   // Auth endpoints
   auth: {
+    login: (email: string, password: string) =>
+      request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+    signup: (email: string, password: string) =>
+      request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
     profile: (token?: string) =>
       request('/auth/profile', {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       }),
-    onboarding: (data: any, token?: string) =>
+    onboarding: (data: Json, token?: string) =>
       request('/auth/onboarding', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -81,7 +86,7 @@ export const api = {
   
   // Payment endpoints
   payment: {
-    receive: (data: any, token?: string) =>
+    receive: (data: Json, token?: string) =>
       request('/payment/receive', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -111,19 +116,19 @@ export const api = {
       request('/flutterwave/banks', {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       }),
-    addBank: (data: any, token?: string) =>
+    addBank: (data: Json, token?: string) =>
       request('/flutterwave/bank/add', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: JSON.stringify(data)
       }),
-    verifyAccount: (data: any, token?: string) =>
+    verifyAccount: (data: Json, token?: string) =>
       request('/flutterwave/verify-account', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: JSON.stringify(data)
       }),
-    transfer: (data: any, token?: string) =>
+    transfer: (data: Json, token?: string) =>
       request('/flutterwave/transfer', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -133,7 +138,7 @@ export const api = {
   
   // Starknet endpoints
   starknet: {
-    withdraw: (data: any, token?: string) =>
+    withdraw: (data: Json, token?: string) =>
       request('/starknet/withdraw', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,

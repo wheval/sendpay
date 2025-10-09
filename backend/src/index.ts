@@ -10,7 +10,9 @@ import { userRoutes } from './routes/user';
 import { paymentRoutes } from './routes/payment';
 import { transactionRoutes } from './routes/transaction';
 import { starknetRoutes } from './routes/starknet';
-import { cavosRoutes } from './routes/cavos';
+import { jwksRoutes } from './routes/jwks';
+// import { cavosRoutes } from './routes/cavos'; // Removed - migrated to ChipiPay
+import { chipiPayRoutes } from './routes/chipipay';
 import { flutterwaveRoutes } from './routes/flutterwave';
 
 const app = express();
@@ -59,8 +61,10 @@ app.use('/api/user', userRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/transaction', transactionRoutes);
 app.use('/api/starknet', starknetRoutes);
-app.use('/api/cavos', cavosRoutes);
+// app.use('/api/cavos', cavosRoutes); // Removed - migrated to ChipiPay
+app.use('/api/chipipay', chipiPayRoutes);
 app.use('/api/flutterwave', flutterwaveRoutes);
+app.use('/', jwksRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

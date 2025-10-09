@@ -43,13 +43,9 @@ router.post('/login', async (req: Request, res: Response) => {
     let user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
-      // Generate a proper 40-character Ethereum address (excluding 0x prefix)
-      const mockCavosWallet = `0x${Array.from({length: 40}, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
-      
       user = new User({
         email: email.toLowerCase(),
         name: email.split('@')[0], // Use email prefix as name
-        cavosWalletAddress: mockCavosWallet,
         bankDetails: {
           bankName: 'Not Set',
           accountNumber: '0000000000',
@@ -73,7 +69,7 @@ router.post('/login', async (req: Request, res: Response) => {
         id: user._id,
         email: user.email,
         name: user.name,
-        cavosWalletAddress: user.cavosWalletAddress,
+        chipiWalletAddress: user.chipiWalletAddress,
         balanceUSD: user.balanceUSD,
         balanceNGN: user.balanceNGN,
         hasBankDetails: user.bankDetails.bankName !== 'Not Set'
@@ -170,7 +166,7 @@ router.post('/onboarding', async (req: Request, res: Response) => {
         id: user._id,
         email: user.email,
         name: user.name,
-        cavosWalletAddress: user.cavosWalletAddress,
+        chipiWalletAddress: user.chipiWalletAddress,
         balanceUSD: user.balanceUSD,
         balanceNGN: user.balanceNGN,
         bankDetails: user.bankDetails
