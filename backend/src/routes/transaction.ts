@@ -298,7 +298,7 @@ router.get('/summary', authenticateToken, async (req: Request, res: Response) =>
     let strkUsdValue = 0
     let totalStrkFormatted = 0
     try {
-      const wallet = (req.user.cavosWalletAddress || '').toLowerCase()
+      const wallet = (req.user.chipiWalletAddress || '').toLowerCase()
       if (wallet) {
         const usdc = getTokenConfig('USDC')
         const strk = getTokenConfig('STRK')

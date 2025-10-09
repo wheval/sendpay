@@ -141,7 +141,7 @@ const USDT_ADDRESSES: Record<StarknetNetwork, { address: string; decimals: strin
 
 export type TokenSymbol = 'STRK' | 'ETH' | 'USDC' | 'USDT'
 
-export const TOKENS: Record<TokenSymbol | 'NETWORK', any> = {
+export const TOKENS: Record<TokenSymbol | 'NETWORK', { address: string; decimals: string } | StarknetNetwork> = {
   STRK: STRK_ADDRESSES[NETWORK],
   ETH: ETH_ADDRESSES[NETWORK],
   USDC: USDC_ADDRESSES[NETWORK],

@@ -13,6 +13,7 @@ assert_macros = "2.11.4"
 
 [[target.starknet-contract]]
 sierra = true
+casm = true
 
 [lib]
 cairo-type-scripts = true

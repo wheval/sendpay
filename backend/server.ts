@@ -5,8 +5,6 @@ dotenv.config({ path: '.env' });
 import express from "express";
 import { spawn } from "child_process";
 
-// NOTE: We no longer import Apibara programmatic APIs here because
-// apibara v2 does not export 'apibara/indexer' for direct import.
 // Instead, we run the CLI as a child process alongside this HTTP server.
 
 // Start a fake HTTP server so Render doesn't kill the service

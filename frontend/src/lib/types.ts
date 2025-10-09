@@ -15,7 +15,7 @@ export interface IUser {
   email: string;
   name: string;
   phone?: string;
-  cavosWalletAddress?: string;
+  chipiWalletAddress?: string;
   starknetNetwork?: 'sepolia' | 'mainnet';
   bankDetails: {
     bankCode: string;

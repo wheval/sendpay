@@ -25,7 +25,7 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
         id: freshUser._id,
         email: freshUser.email,
         name: freshUser.name,
-        cavosWalletAddress: freshUser.cavosWalletAddress,
+        chipiWalletAddress: freshUser.chipiWalletAddress,
         balanceUSD: freshUser.balanceUSD,
         balanceNGN: freshUser.balanceNGN,
         bankDetails: freshUser.bankDetails
@@ -44,7 +44,7 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
 
 /**
  * POST /api/user/wallet-sync
- * Set user's cavosWalletAddress if currently not set
+ * Set user's wallet address if currently not set (legacy endpoint)
  */
 router.post('/wallet-sync', authenticateToken, async (req: Request, res: Response) => {
   try {
@@ -54,9 +54,9 @@ router.post('/wallet-sync', authenticateToken, async (req: Request, res: Respons
     }
 
     const user = req.user;
-    // Only update if not already set
-    if (!user.cavosWalletAddress) {
-      user.cavosWalletAddress = walletAddress;
+    // Only update if wallet address is not already set
+    if (!user.chipiWalletAddress) {
+      user.chipiWalletAddress = walletAddress;
       await user.save();
     }
 
@@ -67,7 +67,7 @@ router.post('/wallet-sync', authenticateToken, async (req: Request, res: Respons
         id: user._id,
         email: user.email,
         name: user.name,
-        cavosWalletAddress: user.cavosWalletAddress,
+        chipiWalletAddress: user.chipiWalletAddress,
         balanceUSD: user.balanceUSD,
         balanceNGN: user.balanceNGN,
         bankDetails: user.bankDetails
@@ -119,7 +119,7 @@ router.put('/profile', authenticateToken, async (req: Request, res: Response) =>
         id: user._id,
         email: user.email,
         name: user.name,
-        cavosWalletAddress: user.cavosWalletAddress,
+        chipiWalletAddress: user.chipiWalletAddress,
         balanceUSD: user.balanceUSD,
         balanceNGN: user.balanceNGN,
         bankDetails: user.bankDetails
