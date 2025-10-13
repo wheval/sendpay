@@ -1,36 +1,25 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
 	CardContent,
 	CardDescription,
-	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
+import { CreatePinModal } from "@/components/CreatePinModal";
 import {
 	ArrowLeft,
-	Mail,
-	Lock,
-	User,
-	CreditCard,
-	Building2,
 	Eye,
 	EyeOff,
 	Loader2,
 } from "lucide-react";
-import Link from "next/link";
 import { api } from "@/lib/api";
+import { SUPPORTED_BANKS, Bank } from "@/lib/constants";
 import { useRouter } from "next/navigation";
 import Navigation from "@/components/navigation";
 import { z } from "zod";
@@ -38,28 +27,16 @@ import {
 	loginSchema,
 	personalInfoSchema,
 	bankDetailsSchema,
-	type LoginFormData,
-	type PersonalInfoData,
-	type BankDetailsData,
 } from "@/lib/schemas";
 import { useToast } from "@/hooks/use-toast";
 import { cookies } from "@/lib/cookies";
-import { normalizeHex } from "@/lib/utils";
 
-interface Bank {
-  id: number;
-  code: string;
-  name: string;
-  country: string;
-  currency: string;
-  type: string;
-  active: boolean;
-}
+
 
 export default function LoginPage() {
 	const [isOnboarding, setIsOnboarding] = useState(false);
 	const [isSignup, setIsSignup] = useState(false);
-	const [step, setStep] = useState(1);
+	const [step, setStep] = useState(2); // Start at step 2 (skip name/phone for now)
 	const [loading, setLoading] = useState(false);
 	const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -78,38 +55,55 @@ export default function LoginPage() {
 	const [accountNumber, setAccountNumber] = useState("");
 	const [accountName, setAccountName] = useState("");
 
-	// Banks state
-	const [banks, setBanks] = useState<Bank[]>([]);
-	const [banksLoading, setBanksLoading] = useState(false);
+  // Banks state - using static list instead of API fetch
+  	const [banks] = useState<Bank[]>(SUPPORTED_BANKS);
+
+  // Create options for Combobox
+  const bankOptions = useMemo(() => 
+    banks.map((bank) => ({
+      value: bank.code,
+      label: bank.name
+    })),
+    [banks]
+  );
+	
+	// Bank verification state
+	const [verifyingAccount, setVerifyingAccount] = useState(false);
+	const [accountVerified, setAccountVerified] = useState(false);
+	const [verificationError, setVerificationError] = useState("");
+	
+	// Wallet creation state
+	const [showCreateWallet, setShowCreateWallet] = useState(false);
+	const [walletCreated, setWalletCreated] = useState(false);
 
 	const { toast } = useToast();
 	const router = useRouter();
 
-	// Fetch banks from Flutterwave API
-	useEffect(() => {
-		const fetchBanks = async () => {
-			if (step === 2 && banks.length === 0) {
-				setBanksLoading(true);
-				try {
-					const response = await api.flutterwave.banks();
-					if (response.success && response.data) {
-						setBanks(response.data);
-					}
-				} catch (error) {
-					console.error('Failed to fetch banks:', error);
-					toast({
-						title: "Error",
-						description: "Failed to load banks. Please try again.",
-						variant: "destructive",
-					});
-				} finally {
-					setBanksLoading(false);
-				}
-			}
-		};
+	// Clear field error function
+	const clearFieldError = useCallback((fieldName: string) => {
+		if (formErrors[fieldName]) {
+			setFormErrors((prev) => {
+				const newErrors = { ...prev };
+				delete newErrors[fieldName];
+				return newErrors;
+			});
+		}
+	}, [formErrors]);
 
-		fetchBanks();
-	}, [step, banks.length, toast]);
+
+	// Check for onboarding parameter in URL
+	useEffect(() => {
+		const urlParams = new URLSearchParams(window.location.search);
+		if (urlParams.get('onboarding') === 'true') {
+			setIsOnboarding(true);
+			setStep(2); // Start at step 2 (bank account setup)
+			toast({
+				title: "Complete Your Profile",
+				description: "Please complete your profile setup to access the dashboard",
+				variant: "default",
+			});
+		}
+	}, [toast]);
 
 	// Handle bank selection
 	const handleBankSelection = (selectedBankCode: string) => {
@@ -119,9 +113,99 @@ export default function LoginPage() {
 			setBankName(selectedBank.name);
 		}
 		clearFieldError("bankCode");
+		// Reset verification when bank changes
+		setAccountVerified(false);
+		setAccountName("");
+		setVerificationError("");
 	};
 
-	const validateForm = (schema: z.ZodSchema, data: any) => {
+	// Verify bank account
+	const verifyBankAccount = useCallback(async (accountNumber: string, bankCode: string) => {
+		if (!accountNumber || !bankCode || accountNumber.length !== 10) {
+			return;
+		}
+
+		setVerifyingAccount(true);
+		setVerificationError("");
+		try {
+			const token = cookies.get("jwt");
+			if (!token) {
+				throw new Error("Authentication required");
+			}
+
+			const response = await api.flutterwave.verifyAccount({
+				accountNumber,
+				accountBank: bankCode
+			}, token);
+
+            if (response.success && response.data) {
+				const verifiedAccountName = response.data.account_name;
+				setAccountName(verifiedAccountName);
+				setAccountVerified(true);
+				setVerificationError("");
+				clearFieldError("accountNumber");
+				
+              // Persist bank details by linking bank account (saves account and details server-side)
+              try {
+                await api.flutterwave.addBank({
+                  bankCode,
+                  accountNumber,
+                  accountName: verifiedAccountName,
+                  bankName
+                }, token);
+                // Refresh profile cache so onboarding hides
+                const refreshed = await api.user.profile(token);
+                if (refreshed?.user) {
+                  cookies.set("user", JSON.stringify(refreshed.user), 7);
+                  localStorage.setItem("user", JSON.stringify(refreshed.user));
+                }
+              } catch {}
+
+				toast({
+					title: "Account Verified!",
+					description: `Account name: ${verifiedAccountName}`,
+					variant: "success",
+				});
+			} else {
+				throw new Error(response.message || "Account verification failed");
+			}
+		} catch (error) {
+			console.error('Account verification failed:', error);
+			setAccountVerified(false);
+			setAccountName("");
+			
+			let errorMessage = "Unable to verify, check your account number";
+            if (error instanceof Error) {
+                errorMessage = error.message || "Unable to verify, check your account number";
+            }
+			setVerificationError(errorMessage);
+			
+			toast({
+				title: "Verification Failed",
+				description: errorMessage,
+				variant: "destructive",
+			});
+		} finally {
+			setVerifyingAccount(false);
+		}
+	}, [toast, clearFieldError]);
+
+	// Debounced verification function
+	const debouncedVerifyAccount = useMemo(() => {
+		let timeoutId: NodeJS.Timeout;
+		return (accountNumber: string, bankCode: string) => {
+			clearTimeout(timeoutId);
+			timeoutId = setTimeout(() => {
+				if (accountNumber.length === 10 && bankCode) {
+					verifyBankAccount(accountNumber, bankCode);
+				}
+			}, 800);
+		};
+	}, [verifyBankAccount]);
+
+	// No longer need bankOptions since we use a simple select
+
+	const validateForm = (schema: z.ZodSchema, data: unknown) => {
 		try {
 			schema.parse(data);
 			setFormErrors({});
@@ -129,7 +213,7 @@ export default function LoginPage() {
 		} catch (err) {
 			if (err instanceof z.ZodError) {
 				const errors: Record<string, string> = {};
-				err.issues.forEach((issue: any) => {
+				err.issues.forEach((issue) => {
 					if (issue.path) {
 						errors[issue.path[0] as string] = issue.message;
 					}
@@ -176,23 +260,46 @@ export default function LoginPage() {
 				variant: "success",
 			});
 
-			// Check if user needs onboarding
-			if (res.user && !res.user.hasBankDetails) {
-				// Reset form for onboarding
-				resetForm();
-				setEmail(formData.email); // Keep the email for onboarding
-				setIsOnboarding(true);
-			} else {
-				// Redirect to dashboard if onboarding is complete
-				router.push("/dashboard");
-			}
-		} catch (err: any) {
+            // Always fetch fresh profile to avoid stale flags in login response
+            type ProfileUser = {
+                chipiWalletAddress?: string;
+                bankDetails?: {
+                    bankName?: string;
+                    bankCode?: string;
+                    accountNumber?: string;
+                    accountName?: string;
+                };
+            };
+            const token = cookies.get("jwt");
+            const profile = token ? await api.user.profile(token) : null;
+            const user: ProfileUser | undefined = (profile?.user as ProfileUser) || (res.user as ProfileUser);
+
+            if (user) {
+                cookies.set("user", JSON.stringify(user), 7);
+                localStorage.setItem("user", JSON.stringify(user));
+            }
+
+            // Compute onboarding need based on wallet + bank fields (best-effort)
+            const hasWallet = Boolean(user?.chipiWalletAddress);
+            const bd = user?.bankDetails || {};
+            const hasBank = Boolean(bd.bankName && bd.bankCode && bd.accountNumber && bd.accountName);
+
+            if (!hasWallet || !hasBank) {
+                // Reset form for onboarding
+                resetForm();
+                setEmail(formData.email);
+                setIsOnboarding(true);
+                setStep(2); // bank account step first
+            } else {
+                router.push("/dashboard");
+            }
+		} catch (err: unknown) {
 			console.error("Login failed", err);
 
 			// Parse error message for user-friendly display
 			let errorMessage = "Login failed. Please check your credentials.";
 
-			if (err.message) {
+			if (err instanceof Error && err.message) {
 				try {
 					// Try to parse the error message from the backend
 					if (err.message.includes("401")) {
@@ -268,11 +375,12 @@ export default function LoginPage() {
 			setEmail(formData.email); // Keep the email for onboarding
 			setIsSignup(false);
 			setIsOnboarding(true);
-		} catch (err: any) {
+			setStep(2); // Start onboarding at step 2 (bank account setup)
+		} catch (err: unknown) {
 			console.error("Signup failed", err);
 
 			let errorMessage = "Signup failed. Please try again.";
-			if (err.message) {
+			if (err instanceof Error && err.message) {
 				errorMessage = err.message;
 			}
 
@@ -291,6 +399,8 @@ export default function LoginPage() {
 	) => {
 		e.preventDefault();
 
+		// Step 1 (Personal Info) - COMMENTED OUT FOR SIMPLICITY
+		/*
 		if (step === 1) {
 			// Validate step 1 before proceeding
 			const personalData = {
@@ -302,6 +412,8 @@ export default function LoginPage() {
 			}
 			setStep(step + 1);
 		} else if (step === 2) {
+		*/
+		if (step === 2) {
 			// Validate step 2 and submit onboarding
 			const bankData = {
 				bankCode,
@@ -315,10 +427,8 @@ export default function LoginPage() {
 
 			// Step 2: Complete Setup - Save to MongoDB first
 			try {
-				// Validate all fields are filled
+				// Validate bank fields are filled (name/phone skipped for simplicity)
 				if (
-					!fullName ||
-					!phone ||
 					!bankCode ||
 					!bankName ||
 					!accountNumber ||
@@ -326,7 +436,17 @@ export default function LoginPage() {
 				) {
 					toast({
 						title: "Missing Information",
-						description: "Please fill in all fields before completing setup",
+						description: "Please fill in all bank fields before completing setup",
+						variant: "destructive",
+					});
+					return;
+				}
+
+				// Validate that account is verified
+				if (!accountVerified) {
+					toast({
+						title: "Account Verification Required",
+						description: "Please verify your bank account before proceeding",
 						variant: "destructive",
 					});
 					return;
@@ -334,8 +454,8 @@ export default function LoginPage() {
 
 				const onboardingData = {
 					email,
-					name: fullName,
-					phone,
+					name: email.split('@')[0], // Use email prefix as name since we skipped name input
+					phone: '', // Empty phone since we skipped phone input
 					bankDetails: {
 						bankCode,
 						bankName,
@@ -356,20 +476,23 @@ export default function LoginPage() {
 
 				const result = await api.auth.onboarding(onboardingData, token);
 
+				// Update stored user data with completion status
+				if (result.user) {
+					cookies.set("user", JSON.stringify(result.user), 7);
+					localStorage.setItem("user", JSON.stringify(result.user));
+				}
+
 				toast({
 					title: "Onboarding complete!",
 					description: "Your account is now set up",
 					variant: "success",
 				});
 
-				// Only move to step 3 after successful save
+				// Move to step 3 (wallet creation) after successful save
 				setStep(3);
-
-				// Redirect to dashboard immediately
-				router.push("/dashboard");
-			} catch (err: any) {
+			} catch (err: unknown) {
 				let errorMessage = "Onboarding failed. Please try again.";
-				if (err.message) {
+				if (err instanceof Error && err.message) {
 					errorMessage = err.message;
 				}
 
@@ -398,16 +521,9 @@ export default function LoginPage() {
 		setAccountName("");
 		setFormErrors({});
 		setStep(1);
-	};
-
-	const clearFieldError = (fieldName: string) => {
-		if (formErrors[fieldName]) {
-			setFormErrors((prev) => {
-				const newErrors = { ...prev };
-				delete newErrors[fieldName];
-				return newErrors;
-			});
-		}
+		setAccountVerified(false);
+		setVerifyingAccount(false);
+		setVerificationError("");
 	};
 
 	const goBackToLogin = () => {
@@ -424,7 +540,7 @@ export default function LoginPage() {
 				<div className="max-w-md mx-auto">
 					{!isOnboarding && !isSignup ? (
 						<Card className="w-full max-w-md mx-auto">
-							<CardContent className="p-6 sm:p-8">
+							<CardContent className="p-4 sm:p-8">
 								<div className="text-center mb-6">
 									<CardTitle className="text-2xl">Welcome to SendPay</CardTitle>
 									<CardDescription>Sign in to your account</CardDescription>
@@ -511,7 +627,7 @@ export default function LoginPage() {
 						</Card>
 					) : isSignup ? (
 						<Card className="w-full max-w-md mx-auto">
-							<CardContent className="p-6 sm:p-8">
+							<CardContent className="p-4 sm:p-8">
 								<div className="text-center mb-6 relative">
 									<Button
 										variant="ghost"
@@ -636,7 +752,7 @@ export default function LoginPage() {
 						</Card>
 					) : (
 						<Card className="w-full max-w-md mx-auto">
-							<CardContent className="p-6 sm:p-8">
+							<CardContent className="p-4 sm:p-8">
 								<div className="text-center mb-6 relative">
 									<Button
 										variant="ghost"
@@ -645,21 +761,52 @@ export default function LoginPage() {
 										onClick={goBackToLogin}
 									>
 										<ArrowLeft className="h-4 w-4 mr-1 sm:mr-2" />
-										<span className="hidden sm:inline">Back</span>
+										<span className="hidden  sr-only">Back</span>
 									</Button>
 									<CardTitle className="text-xl sm:text-2xl">
 										Complete Your Profile
 									</CardTitle>
-									<CardDescription className="text-sm sm:text-base">
-										Step {step} of 3:{" "}
-										{step === 1
-											? "Personal Info"
-											: step === 2
-											? "Bank Details"
-											: "Verification"}
-									</CardDescription>
+									
+									
+									{/* Stepper */}
+									<div className="flex items-center justify-center space-x-2 md:space-x-4 mt-4">
+										{/* Step 1 - Bank Setup */}
+										<div className="flex items-center">
+											<div className={`md:w-6 md:h-6 h-5 w-5 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium ${
+												step >= 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
+											}`}>
+												1
+											</div>
+											<span className={`ml-1 sm:ml-2 text-xs sm:text-sm ${
+												step >= 2 ? 'text-blue-600 font-medium' : 'text-gray-500'
+											}`}>
+												Bank Account
+											</span>
+										</div>
+										
+										{/* Connector */}
+										<div className={`w-8 h-0.5 ${
+											step >= 3 ? 'bg-blue-600' : 'bg-gray-200'
+										}`}></div>
+										
+										{/* Step 2 - Wallet Creation */}
+										<div className="flex items-center">
+											<div className={`md:w-6 md:h-6 h-5 w-5 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium ${
+												step >= 3 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
+											}`}>
+												2
+											</div>
+											<span className={`ml-1 sm:ml-2 text-xs sm:text-sm ${
+												step >= 3 ? 'text-blue-600 font-medium' : 'text-gray-500'
+											}`}>
+												Create Wallet
+											</span>
+										</div>
+									</div>
 								</div>
 								<form onSubmit={handleOnboardingSubmit} className="space-y-4">
+									{/* Step 1 - Personal Info (COMMENTED OUT FOR SIMPLICITY) */}
+									{/* 
 									{step === 1 && (
 										<>
 											<div className="space-y-2">
@@ -707,41 +854,28 @@ export default function LoginPage() {
 											</div>
 										</>
 									)}
+									*/}
 
 									{step === 2 && (
 										<>
 											<div className="space-y-2">
 												<Label htmlFor="bankCode">Bank</Label>
-												<Select
+												
+											{banks.length === 0 ? (
+												<div className="flex items-center justify-center py-4 border rounded-md">
+													<span className="text-muted-foreground">No banks available</span>
+															</div>
+											) : (
+												<Combobox
+													options={bankOptions}
 													value={bankCode}
 													onValueChange={handleBankSelection}
-													required
-												>
-													<SelectTrigger
-														className={
-															getFieldError("bankCode") ? "border-red-500" : ""
-														}
-													>
-														<SelectValue placeholder="Select your bank" />
-													</SelectTrigger>
-													<SelectContent>
-														{banksLoading ? (
-															<div className="flex items-center justify-center py-4">
-																<Loader2 className="h-6 w-6 animate-spin text-primary" />
-															</div>
-														) : banks.length === 0 ? (
-															<SelectItem value="" disabled>
-																No banks found. Please try again later.
-															</SelectItem>
-														) : (
-															banks.map((bank) => (
-																<SelectItem key={bank.id} value={bank.code}>
-																	{bank.name}
-																</SelectItem>
-															))
-														)}
-													</SelectContent>
-												</Select>
+													placeholder="Select your bank"
+													searchPlaceholder="Search banks..."
+													emptyMessage="No banks found."
+													className={getFieldError("bankCode") ? "border-red-500" : ""}
+												/>
+											)}
 												{getFieldError("bankCode") && (
 													<p className="text-red-500 text-xs">
 														{getFieldError("bankCode")}
@@ -763,6 +897,13 @@ export default function LoginPage() {
 														const value = e.target.value.replace(/[^0-9]/g, "");
 														setAccountNumber(value);
 														clearFieldError("accountNumber");
+														// Reset verification when account number changes
+														setAccountVerified(false);
+														setVerificationError("");
+														// Trigger debounced verification when 10 digits are entered
+														if (value.length === 10 && bankCode) {
+															debouncedVerifyAccount(value, bankCode);
+														}
 													}}
 													required
 													className={
@@ -787,61 +928,121 @@ export default function LoginPage() {
 											</div>
 											<div className="space-y-2">
 												<Label htmlFor="accountName">Account Name</Label>
-												<Input
-													id="accountName"
-													placeholder="Enter your account name"
-													value={accountName}
-													onChange={(e) => {
-														setAccountName(e.target.value);
-														clearFieldError("accountName");
-													}}
-													required
-													className={
-														getFieldError("accountName") ? "border-red-500" : ""
-													}
-												/>
-												{getFieldError("accountName") && (
-													<p className="text-red-500 text-xs">
-														{getFieldError("accountName")}
-													</p>
-												)}
+												<div className="relative">
+													<div
+														className={`w-full px-3 h-10 py-2 border rounded-md text-sm ${
+															verifyingAccount 
+																? "border-blue-500 text-blue-700" 
+																: verificationError
+																	? "border-red-500 text-red-700"
+																: accountVerified 
+																	? "border-green-500 text-green-700" 
+																	: "border-gray-300 text-gray-500"
+														}`}
+													>
+														{verifyingAccount 
+															? "Verifying..." 
+															: verificationError
+																? verificationError
+															: accountVerified 
+																? accountName 
+																: ""}
+													</div>
+													{verifyingAccount && (
+														<div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+															<Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+														</div>
+													)}
+													{accountVerified && (
+														<div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+															<svg className="h-4 w-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+																<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+															</svg>
+														</div>
+													)}
+												</div>
 											</div>
 										</>
 									)}
 
-									{step === 3 && (
-										<div className="text-center space-y-4">
-											<div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-												<svg
-													className="w-8 h-8 text-green-600"
-													fill="none"
-													stroke="currentColor"
-													viewBox="0 0 24 24"
-												>
-													<path
-														strokeLinecap="round"
-														strokeLinejoin="round"
-														strokeWidth={2}
-														d="M5 13l4 4L19 7"
-													/>
-												</svg>
-											</div>
-											<div>
-												<h3 className="text-lg font-semibold">
-													Profile Complete!
-												</h3>
-												<p className="text-muted-foreground">
-													Saving your information and redirecting to
-													dashboard...
-												</p>
-											</div>
-										</div>
-									)}
+                                    {step === 3 && (
+                                        <div className="text-center space-y-6">
+                                            {!walletCreated ? (
+                                                <>
+                                                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+                                                        <svg
+                                                            className="w-8 h-8 text-blue-600"
+                                                            fill="none"
+                                                            stroke="currentColor"
+                                                            viewBox="0 0 24 24"
+                                                        >
+                                                            <path
+                                                                strokeLinecap="round"
+                                                                strokeLinejoin="round"
+                                                                strokeWidth={2}
+                                                                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                                                            />
+                                                        </svg>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-lg font-semibold">
+                                                            Create Your Wallet
+                                                        </h3>
+                                                        <p className="text-muted-foreground">
+                                                            Set up a secure wallet to complete your SendPay account
+                                                        </p>
+                                                    </div>
+                                                    <Button 
+                                                        onClick={() => setShowCreateWallet(true)}
+                                                        className="w-full"
+                                                    >
+                                                        Create Wallet
+                                                    </Button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                                                        <svg
+                                                            className="w-8 h-8 text-green-600"
+                                                            fill="none"
+                                                            stroke="currentColor"
+                                                            viewBox="0 0 24 24"
+                                                        >
+                                                            <path
+                                                                strokeLinecap="round"
+                                                                strokeLinejoin="round"
+                                                                strokeWidth={2}
+                                                                d="M5 13l4 4L19 7"
+                                                            />
+                                                        </svg>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-lg font-semibold">Setup Complete!</h3>
+                                                        <p className="text-muted-foreground">Your SendPay account is ready to use</p>
+                                                    </div>
+                                                    <Button 
+                                                        onClick={() => router.push("/dashboard")}
+                                                        className="w-full"
+                                                    >
+                                                        Go to Dashboard
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
 
-									{step < 3 && (
-										<Button type="submit" className="w-full">
-											{step === 2 ? "Complete Setup" : "Next Step"}
-										</Button>
+									{step === 2 && (
+										<div className="space-y-2">
+											<Button 
+												type="submit" 
+												className="w-full"
+												disabled={!accountVerified || verifyingAccount}
+											>
+												{verifyingAccount ? "Verifying Account..." : 
+												 accountVerified ? "Complete Setup" : 
+												 "Verify Account First"}
+											</Button>
+										</div>
 									)}
 								</form>
 							</CardContent>
@@ -849,6 +1050,16 @@ export default function LoginPage() {
 					)}
 				</div>
 			</div>
+
+			{/* Wallet Creation Modal */}
+			<CreatePinModal 
+				open={showCreateWallet} 
+				onClose={() => setShowCreateWallet(false)}
+				onSuccess={() => {
+					setWalletCreated(true);
+					setShowCreateWallet(false);
+				}}
+			/>
 		</div>
 	);
 }

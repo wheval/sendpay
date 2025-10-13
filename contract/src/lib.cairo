@@ -11,8 +11,11 @@ pub const STATUS_PROCESSING: u8 = 0;
 pub const STATUS_COMPLETED: u8 = 1;
 pub const STATUS_FAILED: u8 = 2;
 
-// Batch processing guardrail (simple cap)
-const MAX_BATCH_ITEMS: usize = 50;
+// Pagination limits to prevent heavy read loops
+const MAX_PAGINATION_LIMIT: u256 = 200;
+
+// Timestamp freshness check (5 minutes in seconds)
+const MAX_TIMESTAMP_SKEW: u64 = 300;
 
 
 // Signed withdrawal request for backend validation
@@ -88,14 +91,6 @@ pub trait ISendPay<TContractState> {
     );
 
 
-    // Batch signature-verified withdrawals
-    fn batch_withdraw_with_signatures(
-        ref self: TContractState,
-        requests: Array<WithdrawalRequest>,
-        signatures_r: Array<felt252>,
-        signatures_s: Array<felt252>,
-    );
-
     // Get withdrawal status quickly
     fn get_withdrawal_status(self: @TContractState, withdrawal_id: u256) -> WithdrawalStatus;
 
@@ -110,6 +105,9 @@ pub trait ISendPay<TContractState> {
     // Get USDC token address
     fn get_usdc_token(self: @TContractState) -> ContractAddress;
 
+    // Get chain ID for signature verification
+    fn get_chain_id(self: @TContractState) -> felt252;
+
     // Emergency functions (part of ISendPay)
     fn emergency_pause(ref self: TContractState, reason: felt252);
     fn emergency_resume(ref self: TContractState);
@@ -118,10 +116,6 @@ pub trait ISendPay<TContractState> {
 // Define the internal trait for helper functions
 #[starknet::interface]
 pub trait InternalTrait<TContractState> {
-    fn generate_withdrawal_hash(
-        self: @TContractState, caller: ContractAddress, tx_ref: felt252, timestamp: u64,
-    ) -> u256;
-
     fn transfer_tokens_with_approval(
         ref self: TContractState,
         token_address: ContractAddress,
@@ -172,6 +166,9 @@ pub trait IAdmin<TContractState> {
         ref self: TContractState, token_address: ContractAddress, to: ContractAddress, amount: u256,
     );
     fn get_token_balance(self: @TContractState, token_address: ContractAddress) -> u256;
+
+    // Withdraw completed withdrawal funds to caller (manual admin only)
+    fn withdraw_completed_funds(ref self: TContractState, withdrawal_id: u256);
 }
 
 
@@ -204,8 +201,9 @@ pub mod sendpay {
     // signature verification to be added in a later iteration
 
     use super::{
-        BACKEND_ADMIN_ROLE, DepositRecord, MANUAL_ADMIN_ROLE, MAX_BATCH_ITEMS, STATUS_COMPLETED,
-        STATUS_FAILED, STATUS_PROCESSING, SettlementProof, WithdrawalRequest, WithdrawalStatus,
+        BACKEND_ADMIN_ROLE, DepositRecord, MANUAL_ADMIN_ROLE, MAX_PAGINATION_LIMIT,
+        MAX_TIMESTAMP_SKEW, STATUS_COMPLETED, STATUS_FAILED, STATUS_PROCESSING, SettlementProof,
+        WithdrawalRequest, WithdrawalStatus,
     };
 
     // Define components
@@ -232,9 +230,7 @@ pub mod sendpay {
         // User withdrawal tracking using compound keys
         pub user_withdrawals: Map<(ContractAddress, u256), u256>, // (user, index) -> withdrawal_id
         // Fast access mappings
-        pub withdrawal_by_hash: Map<u256, u256>, // tx_ref + timestamp hash -> withdrawal_id
-        // Batch id counter for unique batch ids
-        pub batch_counter: u256,
+        pub withdrawal_by_hash: Map<felt252, u256>, // request hash -> withdrawal_id
         // Token whitelist
         pub allowed_tokens: Map<ContractAddress, bool>,
         // Reentrancy guard
@@ -253,10 +249,13 @@ pub mod sendpay {
         pub usdc_token: ContractAddress,
         pub min_withdrawal: u256,
         pub max_withdrawal: u256,
+        pub chain_id: felt252,
         // Single backend admin storage
         pub single_backend_admin: ContractAddress,
         // Manual admin count storage
         pub manual_admin_count: u256,
+        // Track collected funds to prevent double collection
+        pub funds_collected: Map<u256, bool>,
     }
 
     #[event]
@@ -274,8 +273,6 @@ pub mod sendpay {
         WithdrawalCreated: WithdrawalCreated,
         WithdrawalCompleted: WithdrawalCompleted,
         WithdrawalFailed: WithdrawalFailed,
-        // Batch processing event
-        BatchWithdrawalProcessed: BatchWithdrawalProcessed,
         // Deposit event
         DepositCompleted: DepositCompleted,
         // Emergency events
@@ -283,9 +280,44 @@ pub mod sendpay {
         EmergencyResumed: EmergencyResumed,
         // Role management events
         RoleChanged: RoleChanged,
+        // Treasury fund movement event
+        PayoutToTreasury: PayoutToTreasury,
     }
 
     // Withdrawal lifecycle event payloads
+    //
+    // EVENT SEMANTICS SUMMARY:
+    // =======================
+    //
+    // 1. WithdrawalCreated: User → Contract (tokens locked)
+    //    - User initiates withdrawal, tokens transferred to contract
+    //    - Index by: Backend (process payout), Frontend (show pending), Analytics
+    //
+    // 2. WithdrawalCompleted: No token movement (status update only)
+    //    - Backend confirms off-chain payout completed
+    //    - Index by: Frontend (show completed), Treasury (know funds available)
+    //
+    // 3. WithdrawalFailed: Contract → User (tokens refunded)
+    //    - Withdrawal rejected, tokens returned to user
+    //    - Index by: Frontend (show failed), Backend (track failures)
+    //
+    // 4. PayoutToTreasury: Contract → Treasury (tokens collected)
+    //    - Admin manually collects tokens from completed withdrawal
+    //    - Index by: Treasury (track collections), Accounting (reconcile balances)
+    //
+    // CRITICAL: Only WithdrawalCreated, WithdrawalFailed, and PayoutToTreasury
+    // indicate actual on-chain token movement. WithdrawalCompleted is status-only.
+
+    /// WithdrawalCreated Event
+    ///
+    /// Triggered when: User successfully initiates a withdrawal request
+    /// Token Movement: User tokens transferred FROM user TO contract (locked)
+    /// Who should index:
+    ///   - Backend systems (to process off-chain payout)
+    ///   - Frontend/UI (to show pending withdrawals)
+    ///   - Analytics/monitoring systems
+    ///
+    /// This event indicates the start of withdrawal process and tokens are now locked in contract
     #[derive(Drop, starknet::Event)]
     pub struct WithdrawalCreated {
         pub withdrawal_id: u256,
@@ -297,6 +329,17 @@ pub mod sendpay {
         pub block_number: u64,
     }
 
+    /// WithdrawalCompleted Event
+    ///
+    /// Triggered when: Backend confirms off-chain payout was completed
+    /// Token Movement: NO on-chain token movement (tokens remain in contract)
+    /// Who should index:
+    ///   - Frontend/UI (to show completed status to users)
+    ///   - Analytics systems (to track completion rates)
+    ///   - Treasury management (to know when funds can be collected)
+    ///
+    /// This event indicates successful off-chain payout but tokens remain locked until admin
+    /// collects them
     #[derive(Drop, starknet::Event)]
     pub struct WithdrawalCompleted {
         pub withdrawal_id: u256,
@@ -308,6 +351,16 @@ pub mod sendpay {
         pub block_number: u64,
     }
 
+    /// WithdrawalFailed Event
+    ///
+    /// Triggered when: Backend rejects withdrawal or withdrawal cannot be completed
+    /// Token Movement: Tokens refunded FROM contract TO user (unlocked)
+    /// Who should index:
+    ///   - Frontend/UI (to show failed status and refund notification)
+    ///   - Backend systems (to track failure reasons)
+    ///   - Analytics systems (to monitor failure rates)
+    ///
+    /// This event indicates withdrawal failed and tokens have been refunded to the user
     #[derive(Drop, starknet::Event)]
     pub struct WithdrawalFailed {
         pub withdrawal_id: u256,
@@ -317,15 +370,6 @@ pub mod sendpay {
         pub tx_ref: felt252,
         pub timestamp: u64,
         pub block_number: u64,
-    }
-
-    // Batch processing event
-    #[derive(Drop, starknet::Event)]
-    pub struct BatchWithdrawalProcessed {
-        pub batch_id: u256,
-        pub total_withdrawals: u256,
-        pub total_amount: u256,
-        pub timestamp: u64,
     }
 
 
@@ -349,6 +393,28 @@ pub mod sendpay {
         pub new_admin: ContractAddress,
         pub timestamp: u64,
     }
+
+    // Treasury fund movement event
+
+    /// PayoutToTreasury Event
+    ///
+    /// Triggered when: Manual admin collects tokens from completed withdrawal
+    /// Token Movement: Tokens transferred FROM contract TO treasury/admin address
+    /// Who should index:
+    ///   - Treasury management systems (to track collected funds)
+    ///   - Accounting systems (to reconcile on-chain vs off-chain balances)
+    ///   - Analytics systems (to monitor fund collection patterns)
+    ///
+    /// This event indicates actual token movement out of contract to treasury
+    /// Only emitted when withdraw_completed_funds() is called by manual admin
+    #[derive(Drop, starknet::Event)]
+    pub struct PayoutToTreasury {
+        pub withdrawal_id: u256,
+        pub treasury_address: ContractAddress,
+        pub amount: u256,
+        pub token_address: ContractAddress,
+        pub timestamp: u64,
+    }
     // Do not expose raw component ABIs for Pausable/AccessControl to avoid
     // external callers bypassing contract invariants and counters.
     #[abi(embed_v0)]
@@ -369,21 +435,6 @@ pub mod sendpay {
 
     // Implement the internal trait for helper functions
     impl InternalImpl of super::InternalTrait<ContractState> {
-        fn generate_withdrawal_hash(
-            self: @ContractState, caller: ContractAddress, tx_ref: felt252, timestamp: u64,
-        ) -> u256 {
-            let caller_felt: felt252 = caller.into();
-            let timestamp_felt: felt252 = timestamp.into();
-
-            let hash_state = PoseidonTrait::new()
-                .update(caller_felt)
-                .update(tx_ref)
-                .update(timestamp_felt);
-
-            let hash_felt: felt252 = hash_state.finalize();
-            hash_felt.into()
-        }
-
         fn transfer_tokens_with_approval(
             ref self: ContractState,
             token_address: ContractAddress,
@@ -406,24 +457,47 @@ pub mod sendpay {
             self.reentrancy_lock.write(false);
         }
 
-        // Signature verification helpers
+        // Signature verification and idempotency hash (timestamp-free to avoid sync issues)
         fn hash_withdrawal_request(self: @ContractState, request: WithdrawalRequest) -> felt252 {
-            let user_felt: felt252 = request.user.into();
-            let amount_felt: felt252 = request.amount.try_into().unwrap();
-            let token_felt: felt252 = request.token.into();
-            let nonce_felt: felt252 = request.nonce.try_into().unwrap();
-            let timestamp_felt: felt252 = request.timestamp.into();
+            // Domain separation constants
+            const DOMAIN_VERSION: felt252 = selector!("SENDPAY_V1");
+            const DOMAIN_PURPOSE: felt252 = selector!("WITHDRAWAL_REQUEST");
 
+            let user_felt: felt252 = request.user.into();
+            // Safe conversion with bounds checking
+            let amount_felt: felt252 = match request.amount.try_into() {
+                Option::Some(val) => val,
+                Option::None => {
+                    assert(false, 'Amount too large for field');
+                    0 // This line will never execute
+                },
+            };
+            let token_felt: felt252 = request.token.into();
+            let nonce_felt: felt252 = match request.nonce.try_into() {
+                Option::Some(val) => val,
+                Option::None => {
+                    assert(false, 'Nonce too large for field');
+                    0 // This line will never execute
+                },
+            };
+            let contract_felt: felt252 = get_contract_address().into();
+            let chain_id_felt: felt252 = self.chain_id.read();
+
+            // Hash without timestamp to avoid synchronization issues
             let hash_state = PoseidonTrait::new()
+                .update(DOMAIN_VERSION)
+                .update(DOMAIN_PURPOSE)
+                .update(contract_felt)
+                .update(chain_id_felt)
                 .update(user_felt)
                 .update(amount_felt)
                 .update(token_felt)
                 .update(request.tx_ref)
-                .update(nonce_felt)
-                .update(timestamp_felt);
+                .update(nonce_felt);
 
             hash_state.finalize()
         }
+
 
         fn verify_withdrawal_signature(
             self: @ContractState,
@@ -431,9 +505,11 @@ pub mod sendpay {
             signature_r: felt252,
             signature_s: felt252,
         ) -> bool {
-            let message_hash = self.hash_withdrawal_request(request);
             let public_key = self.backend_public_key.read();
+            // CRITICAL: Ensure backend public key is set (non-zero)
+            assert(public_key != 0, 'Backend public key not set');
 
+            let message_hash = self.hash_withdrawal_request(request);
             check_ecdsa_signature(message_hash, public_key, signature_r, signature_s)
         }
     }
@@ -450,27 +526,34 @@ pub mod sendpay {
             self.enter_non_reentrant();
             self.pausable.assert_not_paused();
 
-            // Verify signature
-            assert(
-                self.verify_withdrawal_signature(request, signature_r, signature_s),
-                'Invalid signature',
-            );
-
             let caller = get_caller_address();
             assert(caller == request.user, 'Caller must be request user');
 
-            // Validate request
+            // Validate request (cheap checks first)
             assert(request.amount > 0_u256, 'Amount must be greater than 0');
             assert(request.amount >= self.min_withdrawal.read(), 'Amount below minimum');
             assert(request.amount <= self.max_withdrawal.read(), 'Amount above maximum');
+
+            // Check nonce (cheap check before expensive signature verification)
+            let current_nonce = self.user_nonces.entry(caller).read();
+            assert(request.nonce == current_nonce, 'Invalid nonce');
+
+            // Check timestamp freshness (prevent signed transaction reuse)
+            let current_timestamp = get_block_timestamp();
+            // Check if request timestamp is within acceptable range
+            assert(current_timestamp >= request.timestamp, 'Timestamp too far in future');
+            let time_diff = current_timestamp - request.timestamp;
+            assert(time_diff <= MAX_TIMESTAMP_SKEW, 'Timestamp too old');
 
             // Token whitelist
             let token_allowed = self.allowed_tokens.entry(request.token).read();
             assert(token_allowed, 'Token not allowed');
 
-            // Check nonce
-            let current_nonce = self.user_nonces.entry(caller).read();
-            assert(request.nonce == current_nonce, 'Invalid nonce');
+            // Verify signature (expensive operation last)
+            assert(
+                self.verify_withdrawal_signature(request, signature_r, signature_s),
+                'Invalid signature',
+            );
 
             // Check ERC20 allowance
             let token_contract = IERC20Dispatcher { contract_address: request.token };
@@ -479,6 +562,11 @@ pub mod sendpay {
 
             let timestamp = get_block_timestamp();
             let block_number = get_block_number();
+
+            // Idempotency guard: check if this request was already processed
+            let request_hash = self.hash_withdrawal_request(request);
+            let existing_withdrawal = self.withdrawal_by_hash.entry(request_hash).read();
+            assert(existing_withdrawal == 0, 'Request already processed');
 
             // Transfer tokens from user -> contract
             self
@@ -502,6 +590,9 @@ pub mod sendpay {
 
             self.withdrawals.entry(withdrawal_id).write(record);
             self.withdrawal_counter.write(withdrawal_id + 1_u256);
+
+            // Store withdrawal hash for idempotency
+            self.withdrawal_by_hash.entry(request_hash).write(withdrawal_id);
 
             // Update user counters and nonce
             let user_count = self.user_withdrawal_count.entry(caller).read();
@@ -529,134 +620,6 @@ pub mod sendpay {
         }
 
 
-        // Batch signature-verified withdrawals
-        fn batch_withdraw_with_signatures(
-            ref self: ContractState,
-            requests: Array<WithdrawalRequest>,
-            signatures_r: Array<felt252>,
-            signatures_s: Array<felt252>,
-        ) {
-            self.enter_non_reentrant();
-            self.pausable.assert_not_paused();
-
-            let timestamp = get_block_timestamp();
-            let block_number = get_block_number();
-
-            let mut total_amount = 0_u256;
-            let mut processed_count = 0_u256;
-
-            // Guard: non-empty batch
-            assert(requests.len() > 0, 'Empty batch');
-            assert(requests.len() <= MAX_BATCH_ITEMS, 'Batch too large');
-            assert(requests.len() == signatures_r.len(), 'Signature count mismatch');
-            assert(requests.len() == signatures_s.len(), 'Signature count mismatch');
-
-            // First pass: validate all requests and calculate total amount
-            let first_request = requests.at(0);
-            let first_token = *first_request.token;
-
-            // Whitelist check for the batch token
-            let token_allowed = self.allowed_tokens.entry(first_token).read();
-            assert(token_allowed, 'Token not allowed');
-
-            let mut i = 0;
-            loop {
-                if i >= requests.len() {
-                    break;
-                }
-
-                let request = requests.at(i);
-                let signature_r = signatures_r.at(i);
-                let signature_s = signatures_s.at(i);
-
-                // Verify signature
-                assert(
-                    self.verify_withdrawal_signature(*request, *signature_r, *signature_s),
-                    'Invalid signature',
-                );
-
-                // Validate request
-                assert(*request.amount > 0_u256, 'Invalid amount in batch');
-                assert(
-                    *request.amount >= self.min_withdrawal.read(), 'Amount below minimum in batch',
-                );
-                assert(
-                    *request.amount <= self.max_withdrawal.read(), 'Amount above maximum in batch',
-                );
-                assert(*request.token == first_token, 'Same token required');
-
-                // Check nonce
-                let current_nonce = self.user_nonces.entry(*request.user).read();
-                assert(*request.nonce == current_nonce, 'Invalid nonce in batch');
-
-                total_amount += *request.amount;
-                i += 1;
-            }
-
-            // Check total allowance upfront for the caller (assuming all requests are from same
-            // caller)
-            let caller = get_caller_address();
-            let token_contract = IERC20Dispatcher { contract_address: first_token };
-            let allowance = token_contract.allowance(caller, get_contract_address());
-            assert(allowance >= total_amount, 'Insufficient allowance');
-
-            // Second pass: process all withdrawals
-            let mut i = 0;
-            loop {
-                if i >= requests.len() {
-                    break;
-                }
-
-                let request = requests.at(i);
-
-                // Transfer tokens from caller to contract
-                let transfer_success = token_contract
-                    .transfer_from(caller, get_contract_address(), *request.amount);
-                assert(transfer_success, 'Transfer to contract failed');
-
-                // Create withdrawal record
-                let withdrawal_id = self.withdrawal_counter.read();
-                let withdrawal_status = WithdrawalStatus {
-                    withdrawal_id,
-                    user: *request.user,
-                    amount: *request.amount,
-                    token_address: *request.token,
-                    tx_ref: *request.tx_ref,
-                    timestamp,
-                    status: STATUS_PROCESSING,
-                    block_number,
-                    nonce: *request.nonce,
-                };
-
-                // Store withdrawal
-                self.withdrawals.entry(withdrawal_id).write(withdrawal_status);
-                self.withdrawal_counter.write(withdrawal_id + 1_u256);
-
-                // Update user counters and nonce
-                let user_count = self.user_withdrawal_count.entry(*request.user).read();
-                self.user_withdrawal_count.entry(*request.user).write(user_count + 1_u256);
-                self.user_withdrawals.entry((*request.user, user_count)).write(withdrawal_id);
-                self.user_nonces.entry(*request.user).write(*request.nonce + 1_u256);
-
-                processed_count += 1_u256;
-                i += 1;
-            }
-
-            // Emit batch event
-            let batch_id = self.batch_counter.read();
-            self.batch_counter.write(batch_id + 1_u256);
-            self
-                .emit(
-                    Event::BatchWithdrawalProcessed(
-                        BatchWithdrawalProcessed {
-                            batch_id, total_withdrawals: processed_count, total_amount, timestamp,
-                        },
-                    ),
-                );
-
-            self.exit_non_reentrant();
-        }
-
         // Fast status lookup
         fn get_withdrawal_status(self: @ContractState, withdrawal_id: u256) -> WithdrawalStatus {
             self.withdrawals.entry(withdrawal_id).read()
@@ -666,6 +629,9 @@ pub mod sendpay {
         fn get_user_withdrawals(
             self: @ContractState, user: ContractAddress, offset: u256, limit: u256,
         ) -> Array<WithdrawalStatus> {
+            // Pagination limit to prevent heavy read loops
+            assert(limit <= MAX_PAGINATION_LIMIT, 'Limit too large');
+
             let mut result = ArrayTrait::new();
             let user_count = self.user_withdrawal_count.entry(user).read();
 
@@ -708,6 +674,11 @@ pub mod sendpay {
             self.usdc_token.read()
         }
 
+        // Get chain ID for signature verification
+        fn get_chain_id(self: @ContractState) -> felt252 {
+            self.chain_id.read()
+        }
+
         // Emergency pause with reason - only manual admin
         fn emergency_pause(ref self: ContractState, reason: felt252) {
             self.accesscontrol.assert_only_role(MANUAL_ADMIN_ROLE);
@@ -736,6 +707,7 @@ pub mod sendpay {
     #[abi(embed_v0)]
     impl AdminImpl of super::IAdmin<ContractState> { // Implements the new IAdmin trait
         // Fast withdrawal completion - either admin can complete
+        // Note: This only updates status. Actual fiat transfer happens off-chain.
         fn complete_withdrawal(ref self: ContractState, withdrawal_id: u256) {
             self.enter_non_reentrant();
             // Check if caller has either backend or manual admin role
@@ -748,6 +720,7 @@ pub mod sendpay {
             assert(withdrawal.status == STATUS_PROCESSING, 'Withdrawal not processing');
 
             // Update status to completed
+            // Note: Tokens remain in contract - actual fiat payout happens off-chain
             withdrawal.status = STATUS_COMPLETED;
             self.withdrawals.entry(withdrawal_id).write(withdrawal);
 
@@ -770,6 +743,7 @@ pub mod sendpay {
         }
 
         // Complete withdrawal with settlement proof (for off-chain integration)
+        // Note: This only updates status. Actual fiat transfer happens off-chain.
         fn complete_withdrawal_with_proof(
             ref self: ContractState, withdrawal_id: u256, proof: SettlementProof,
         ) {
@@ -781,12 +755,11 @@ pub mod sendpay {
             assert(withdrawal.status == STATUS_PROCESSING, 'Withdrawal not processing');
 
             // Verify settlement proof (basic validation)
-            println!("DEBUG CONTRACT: proof.settled_amount = {}", proof.settled_amount);
-            println!("DEBUG CONTRACT: withdrawal.amount = {}", withdrawal.amount);
             assert(proof.settled_amount == withdrawal.amount, 'Settlement amount mismatch');
             assert(proof.timestamp > withdrawal.timestamp, 'Invalid settlement timestamp');
 
             // Update status to completed
+            // Note: Tokens remain in contract - actual fiat payout happens off-chain
             withdrawal.status = STATUS_COMPLETED;
             self.withdrawals.entry(withdrawal_id).write(withdrawal);
 
@@ -808,16 +781,21 @@ pub mod sendpay {
             self.exit_non_reentrant();
         }
 
-        // Explicitly mark a withdrawal as failed (e.g., fiat failed or policy violation)
+        // Explicitly mark a withdrawal as failed and refund tokens to user
         fn fail_withdrawal(ref self: ContractState, withdrawal_id: u256) {
             self.enter_non_reentrant();
             self.accesscontrol.assert_only_role(MANUAL_ADMIN_ROLE);
 
-            let mut withdrawal = self.withdrawals.read(withdrawal_id);
+            let mut withdrawal = self.withdrawals.entry(withdrawal_id).read();
             assert(withdrawal.status == STATUS_PROCESSING, 'Withdrawal not processing');
 
+            // Refund tokens back to user before marking as failed
+            let token_contract = IERC20Dispatcher { contract_address: withdrawal.token_address };
+            let refund_success = token_contract.transfer(withdrawal.user, withdrawal.amount);
+            assert(refund_success, 'Token refund failed');
+
             withdrawal.status = STATUS_FAILED;
-            self.withdrawals.write(withdrawal_id, withdrawal);
+            self.withdrawals.entry(withdrawal_id).write(withdrawal);
 
             // Emit failed event for indexers
             self
@@ -851,8 +829,19 @@ pub mod sendpay {
         }
 
         // Set backend public key for signature verification - only manual admin
+        //
+        // IMPORTANT: public_key must be in the format expected by check_ecdsa_signature:
+        // - Must be a valid Stark curve public key (felt252)
+        // - Use the same key format that generates r,s signatures for hash_withdrawal_request
+        // - Key must be non-zero (validated in verify_withdrawal_signature)
+        //
+        // Example deployment values:
+        // - Sepolia: Set to your backend's Stark public key
+        // - Mainnet: Set to your backend's Stark public key
         fn set_backend_public_key(ref self: ContractState, public_key: felt252) {
             self.accesscontrol.assert_only_role(MANUAL_ADMIN_ROLE);
+            // Basic validation - must be non-zero
+            assert(public_key != 0, 'Public key cannot be zero');
             self.backend_public_key.write(public_key);
         }
 
@@ -972,6 +961,45 @@ pub mod sendpay {
             let token_contract = IERC20Dispatcher { contract_address: token_address };
             token_contract.balance_of(get_contract_address())
         }
+
+        // Withdraw completed withdrawal funds to caller (manual admin only)
+        fn withdraw_completed_funds(ref self: ContractState, withdrawal_id: u256) {
+            self.enter_non_reentrant();
+            // Only manual admins can withdraw completed funds
+            self.accesscontrol.assert_only_role(MANUAL_ADMIN_ROLE);
+
+            let withdrawal = self.withdrawals.entry(withdrawal_id).read();
+            // Only allow withdrawal of completed withdrawals
+            assert(withdrawal.status == STATUS_COMPLETED, 'Withdrawal not completed');
+            // Prevent double collection
+            let already_collected = self.funds_collected.entry(withdrawal_id).read();
+            assert(!already_collected, 'Funds already collected');
+
+            // Transfer tokens to the calling admin (safer than allowing arbitrary address)
+            let caller = get_caller_address();
+            let token_contract = IERC20Dispatcher { contract_address: withdrawal.token_address };
+            let success = token_contract.transfer(caller, withdrawal.amount);
+            assert(success, 'Transfer to admin failed');
+
+            // Mark funds as collected to prevent double collection
+            self.funds_collected.entry(withdrawal_id).write(true);
+
+            // Emit dedicated payout to admin event
+            self
+                .emit(
+                    Event::PayoutToTreasury(
+                        PayoutToTreasury {
+                            withdrawal_id,
+                            treasury_address: caller,
+                            amount: withdrawal.amount,
+                            token_address: withdrawal.token_address,
+                            timestamp: get_block_timestamp(),
+                        },
+                    ),
+                );
+
+            self.exit_non_reentrant();
+        }
     }
 
     #[constructor] // Correct placement of constructor attribute
@@ -981,6 +1009,7 @@ pub mod sendpay {
         usdc_token: ContractAddress,
         backend_admin: ContractAddress,
         initial_manual_admins: Array<ContractAddress>,
+        chain_id: felt252,
     ) {
         // Initialize AccessControl
         self.accesscontrol.initializer();
@@ -1009,8 +1038,8 @@ pub mod sendpay {
 
         // Initialize config and counters
         self.usdc_token.write(usdc_token);
+        self.chain_id.write(chain_id);
         self.withdrawal_counter.write(1); // Start withdrawal_counter from 1
-        self.batch_counter.write(1); // Start batch_counter from 1
         self.deposit_counter.write(1); // Start deposit_counter from 1
         self.reentrancy_lock.write(false);
         // Initialize backend public key to zero (must be set later by admin)
@@ -1121,6 +1150,9 @@ pub mod sendpay {
         fn get_user_deposits(
             self: @ContractState, user: ContractAddress, offset: u256, limit: u256,
         ) -> Array<DepositRecord> {
+            // Pagination limit to prevent heavy read loops
+            assert(limit <= MAX_PAGINATION_LIMIT, 'Limit too large');
+
             let mut result = ArrayTrait::new();
             let total = self.user_deposit_count.entry(user).read();
 

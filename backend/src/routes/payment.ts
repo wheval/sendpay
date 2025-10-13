@@ -195,41 +195,8 @@ router.post('/:reference/process', async (req: Request, res: Response) => {
       });
     }
 
-    // Simulate payment processing
-    // In production, this would involve:
-    // 1. Verifying payment on Starknet
-    // 2. Updating user balances
-    // 3. Recording the transaction
-
-    // Update transaction status
-    transaction.status = 'completed';
-    await transaction.save();
-
-    // Update recipient balance
-    if (typeof transaction.userId !== 'string') {
-      const recipient = transaction.userId as unknown as IUserDocument;
-      recipient.balanceUSD += transaction.amountUSD;
-      recipient.balanceNGN += transaction.amountNGN;
-      await recipient.save();
-    }
-
-    // In production, you would also:
-    // 1. Listen for Starknet contract events
-    // 2. Verify the actual USDC transfer
-    // 3. Handle gas fees and processing fees
-
-    res.json({
-      success: true,
-      message: 'Payment processed successfully',
-      data: {
-        reference: transaction.reference,
-        amountUSD: transaction.amountUSD,
-        amountNGN: transaction.amountNGN,
-        status: transaction.status,
-        processedAt: new Date(),
-        transactionId: transaction._id
-      }
-    });
+    // TODO: Implement real payment verification
+    throw new Error('Payment processing endpoint not implemented. This feature requires Starknet payment verification integration.');
 
   } catch (error: unknown) {
     console.error('Payment processing error:', error);

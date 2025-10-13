@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import { flutterwaveService } from '../services/flutterwave.service';
+import { starknetService } from '../services/starknet.service';
+import { signatureService } from '../services/signature.service';
 import { generateReference } from '../utils/helpers';
 import { Transaction } from '../models/Transaction';
 import { BankAccount } from '../models/BankAccount';
+import { exchangeRateService } from '../services/exchange-rate.service';
 
 const router = Router();
 
@@ -86,6 +89,53 @@ router.post('/bank/add', authenticateToken, async (req: Request, res: Response) 
       message: 'Failed to add bank account',
       error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : 'Internal server error'
     });
+  }
+});
+
+/**
+ * POST /api/flutterwave/onramp/initiate
+ * Initiate hosted payment (on-ramp) and create pending deposit record
+ */
+router.post('/onramp/initiate', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { amountUSD } = req.body;
+    const user = req.user;
+    if (!amountUSD || Number(amountUSD) <= 0) {
+      return res.status(400).json({ success: false, message: 'amountUSD required' });
+    }
+
+    // Create fiat_tx_ref and store pending deposit transaction
+    const fiat_tx_ref = generateReference();
+    const tx = await Transaction.create({
+      userId: user._id,
+      type: 'deposit',
+      status: 'pending',
+      amountUSD: Number(amountUSD),
+      amountNGN: await exchangeRateService.convertUSDToNGN(Number(amountUSD)),
+      description: `On-ramp ${amountUSD} USD`,
+      reference: fiat_tx_ref,
+      metadata: { fiat_tx_ref }
+    });
+
+    // Create real Flutterwave hosted payment link
+    const hostedUrl = await flutterwaveService.createHostedPayment({
+      amount: tx.amountNGN,
+      currency: 'NGN',
+      tx_ref: fiat_tx_ref,
+      customer: {
+        email: req.user.email,
+        name: req.user.name
+      },
+      customizations: {
+        title: 'SendPay - Deposit Funds',
+        description: `Deposit ${tx.amountNGN} NGN to your SendPay account`
+      }
+    });
+
+    res.json({ success: true, data: { fiat_tx_ref, hostedUrl, transactionId: tx._id } });
+  } catch (error: any) {
+    console.error('Onramp initiate error:', error);
+    res.status(500).json({ success: false, message: 'Failed to initiate on-ramp', error: error.message });
   }
 });
 
@@ -254,12 +304,8 @@ router.post('/transfer/:id/retry', authenticateToken, async (req: Request, res: 
       });
     }
 
-    // For now, return a mock response since we don't have a retry endpoint
-    res.json({
-      success: true,
-      message: 'Transfer retry initiated successfully',
-      data: { id: transferId, status: 'PENDING' }
-    });
+    // TODO: Implement real transfer retry endpoint
+    throw new Error('Transfer retry endpoint not implemented. This feature requires additional Flutterwave API integration.');
   } catch (error: unknown) {
     console.error('Transfer retry error:', error);
     res.status(500).json({
@@ -285,17 +331,8 @@ router.get('/transfer-fee', authenticateToken, async (req: Request, res: Respons
       });
     }
 
-    // For now, return a mock response
-    res.json({
-      success: true,
-      message: 'Transfer fee retrieved successfully',
-      data: {
-        currency: currency as string,
-        fee_type: 'fixed',
-        fee: 0,
-        fee_currency: 'NGN'
-      }
-    });
+    // TODO: Implement real transfer fee calculation
+    throw new Error('Transfer fee calculation endpoint not implemented. This feature requires additional Flutterwave API integration.');
   } catch (error: unknown) {
     console.error('Transfer fee retrieval error:', error);
     res.status(500).json({
@@ -312,18 +349,8 @@ router.get('/transfer-fee', authenticateToken, async (req: Request, res: Respons
  */
 router.get('/balance', authenticateToken, async (req: Request, res: Response) => {
   try {
-    // For now, return a mock response
-    res.json({
-      success: true,
-      message: 'Balance retrieved successfully',
-      data: [
-        {
-          currency: 'NGN',
-          available_balance: 1000000,
-          ledger_balance: 1000000
-        }
-      ]
-    });
+    // TODO: Implement real balance retrieval
+    throw new Error('Balance retrieval endpoint not implemented. This feature requires additional Flutterwave API integration.');
   } catch (error: unknown) {
     console.error('Balance retrieval error:', error);
     res.status(500).json({
@@ -346,15 +373,56 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
     // Verify webhook signature (recommended for production)
     const signature = req.headers['verif-hash'];
-    if (process.env.NODE_ENV === 'production' && signature) {
-      // TODO: Implement signature verification
-      // const isValid = verifyWebhookSignature(req.body, signature, process.env.FLUTTERWAVE_SECRET_HASH);
-      // if (!isValid) return res.status(401).json({ error: 'Invalid signature' });
+    const secret = process.env.FLUTTERWAVE_ENCRYPTION_KEY || process.env.FLUTTERWAVE_SECRET_HASH;
+    if (signature && secret) {
+      if (signature !== secret) {
+        console.warn('Invalid Flutterwave webhook signature');
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
     }
 
     switch (event) {
       case 'transfer.completed':
         await handleTransferCompleted(data);
+        // Attempt to complete on-chain withdrawal if we have mapping
+        try {
+          const reference = data?.reference; // expected wd_<withdrawalId>
+          if (reference && typeof reference === 'string' && reference.startsWith('wd_')) {
+            const withdrawalId = reference.slice(3);
+            // Generate real settlement proof signature
+            const settlementData = {
+              fiat_tx_hash: String(data?.id || data?.tx_ref || reference),
+              settled_amount: String(data?.amount || '0'),
+              timestamp: Math.floor(Date.now() / 1000)
+            };
+
+            const settlementSignature = await signatureService.signSettlementProof(settlementData);
+
+            const proof = {
+              ...settlementData,
+              backend_signature: settlementSignature
+            };
+            await starknetService.completeWithdrawal(withdrawalId, proof);
+          }
+        } catch (e) {
+          console.error('On-chain completion error:', e);
+        }
+        break;
+      case 'charge.completed':
+      case 'payment.completed':
+      case 'transfer.successful':
+        // Handle hosted pay/on-ramp success
+        try {
+          const fiat_tx_ref = data?.tx_ref || data?.flw_ref || data?.reference;
+          const amount = String(data?.amount || '0');
+          const metadata = (data?.meta || {}) as any;
+          const userAddress = metadata?.userAddress || metadata?.walletAddress;
+          if (fiat_tx_ref && userAddress) {
+            await starknetService.depositAndCredit(userAddress, amount, String(fiat_tx_ref));
+          }
+        } catch (e) {
+          console.error('On-chain deposit error:', e);
+        }
         break;
       
       case 'transfer.failed':

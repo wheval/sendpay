@@ -42,12 +42,10 @@ export default function Navigation({ landing }: Navigation) {
 		return pathname === path;
 	};
 
-	const navItems = [
-		{ href: "/dashboard", label: "Dashboard" },
-		{ href: "/receive", label: "Receive" },
-		{ href: "/withdraw", label: "Withdraw" },
-		{ href: "/history", label: "History" },
-	];
+    const navItems = [
+        { href: "/dashboard", label: "Dashboard" },
+        { href: "/history", label: "History" },
+    ];
 
 	const handleLogout = () => {
 		try {

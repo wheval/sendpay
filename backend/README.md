@@ -72,7 +72,7 @@ src/
    MONGODB_URI=mongodb://localhost:27017/sendpay
    JWT_SECRET=your_jwt_secret_here
    STARKNET_RPC_URL=https://starknet-sepolia.public.blastapi.io/rpc/v0_7
-   SENDPAY_CONTRACT_ADDRESS=0x05adeea982017c957b9671fe1f0870d83b60868d688dca39681b415493c3ae99
+   SENDPAY_CONTRACT_ADDRESS=0x0444d5c9b2a6375bdce805338cdf6340439be92aec2e854704e77bedcdfd929a
    USDC_TESTNET_ADDRESS=0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080
    
    # Apibara (DNA) — required to run the indexer

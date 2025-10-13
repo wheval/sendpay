@@ -8,7 +8,7 @@ import { Toaster } from "@/components/ui/toaster"
 const manrope = Manrope({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "SendPay - Crypto in. Cash out Instantly",
+  title: "SendPay - Crypto in. Cash out Instantly For Africa",
   description: "Fast, secure, and reliable money transfers at your fingertips.",
 }
 

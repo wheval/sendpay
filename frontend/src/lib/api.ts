@@ -39,7 +39,7 @@ export const api = {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: JSON.stringify({ walletAddress, publicKey })
       }),
-    walletBackup: async (_token?: string) => {
+    walletBackup: async () => {
       throw new Error('Use client-side Chipi SDK for wallet backup.');
     }
   },
@@ -49,7 +49,7 @@ export const api = {
     login: (email: string, password: string) =>
       request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
     signup: (email: string, password: string) =>
-      request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+      request('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
     profile: (token?: string) =>
       request('/auth/profile', {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,

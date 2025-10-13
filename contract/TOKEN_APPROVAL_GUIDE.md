@@ -5,21 +5,22 @@ A production-ready Starknet smart contract for seamless crypto-to-fiat and fiat-
 ## 🏗️ Architecture Overview
 
 ### **Core Components**
-- **Signature-Verified Withdrawals**: Cryptographically secure withdrawal processing
+- **Signature-Verified Withdrawals**: Cryptographically secure withdrawal processing with domain separation
 - **Privacy Protection**: Uses `tx_ref` (transaction references) instead of storing sensitive bank details
 - **Role-Based Access Control**: Three-tier admin system for security
 - **Reentrancy Protection**: Guards against common smart contract vulnerabilities
-- **Batch Processing**: Efficient multi-withdrawal processing
+- **Idempotency Protection**: Prevents duplicate transaction processing
+- **Timestamp Freshness**: 5-minute window for request validity
 - **Event-Driven**: Complete audit trail for off-chain integration
 
 ### **Contract Structure**
 ```
 SendPay Contract
 ├── Signature-Based Withdrawals (Primary Flow)
-├── Batch Processing
 ├── Deposit & Credit System
 ├── Admin Management
 ├── Token Whitelist
+├── Fund Collection (Treasury Management)
 └── Emergency Controls (Pause/Upgrade)
 ```
 
@@ -58,10 +59,12 @@ fn withdraw_with_signature(
     signature_s: felt252,
 ) {
     // 1. Verify ECDSA signature against backend public key
-    // 2. Validate request (amount, token, nonce)
-    // 3. Transfer tokens from user → contract
-    // 4. Store WithdrawalStatus with STATUS_PROCESSING
-    // 5. Emit WithdrawalCreated event
+    // 2. Validate timestamp freshness (±5 minutes)
+    // 3. Check idempotency (prevent duplicate requests)
+    // 4. Validate request (amount, token, nonce)
+    // 5. Transfer tokens from user → contract
+    // 6. Store WithdrawalStatus with STATUS_PROCESSING
+    // 7. Emit WithdrawalCreated event
 }
 ```
 
@@ -88,6 +91,21 @@ fn complete_withdrawal_with_proof(
     // 1. Verify settlement proof
     // 2. Update status to STATUS_COMPLETED
     // 3. Emit WithdrawalCompleted event
+    // Note: Tokens remain in contract until manually collected
+}
+```
+
+#### **5. Fund Collection (Optional)**
+```cairo
+fn withdraw_completed_funds(
+    ref self: ContractState,
+    withdrawal_id: u256,
+) {
+    // 1. Verify caller has MANUAL_ADMIN_ROLE
+    // 2. Check withdrawal is completed and not already collected
+    // 3. Transfer tokens from contract → admin address
+    // 4. Mark funds as collected
+    // 5. Emit PayoutToTreasury event
 }
 ```
 
@@ -135,9 +153,11 @@ fn deposit_and_credit(
 
 ### **Cryptographic Security**
 - **ECDSA Signature Verification**: All withdrawals require backend signature
+- **Domain Separation**: Chain ID, contract address, and version included in signatures
 - **Poseidon Hashing**: For `tx_ref` generation and withdrawal uniqueness
 - **Nonce-based Replay Protection**: Perfect replay prevention per user
-- **Hash-based Deduplication**: Prevents duplicate processing
+- **Idempotency Protection**: Hash-based deduplication prevents duplicate processing
+- **Timestamp Freshness**: 5-minute window prevents replay attacks with old requests
 
 ### **Access Control System**
 | Role | Permissions | Use Case |
@@ -268,14 +288,6 @@ fn withdraw_with_signature(
     signature_s: felt252,
 );
 
-// Batch signature-verified withdrawals
-fn batch_withdraw_with_signatures(
-    ref self: ContractState,
-    requests: Array<WithdrawalRequest>,
-    signatures_r: Array<felt252>,
-    signatures_s: Array<felt252>,
-);
-
 // Get user nonce
 fn get_user_nonce(self: @ContractState, user: ContractAddress) -> u256;
 
@@ -289,6 +301,9 @@ fn get_user_withdrawals(
     offset: u256, 
     limit: u256
 ) -> Array<WithdrawalStatus>;
+
+// Get chain ID
+fn get_chain_id(self: @ContractState) -> felt252;
 ```
 
 ### **Admin Functions**
@@ -298,6 +313,18 @@ fn complete_withdrawal_with_proof(
     ref self: ContractState,
     withdrawal_id: u256,
     proof: SettlementProof,
+);
+
+// Fail withdrawal (refund tokens to user)
+fn fail_withdrawal(
+    ref self: ContractState,
+    withdrawal_id: u256,
+);
+
+// Collect completed withdrawal funds to treasury
+fn withdraw_completed_funds(
+    ref self: ContractState,
+    withdrawal_id: u256,
 );
 
 // Deposit and credit user
@@ -321,15 +348,15 @@ fn unpause(ref self: ContractState);
 ## 📈 **Performance & Scalability**
 
 ### **Gas Optimization**
-- **Batch Processing**: Up to 50 withdrawals per batch
 - **Optimized Storage**: Minimal on-chain data storage
 - **Hash-based Lookups**: O(1) withdrawal uniqueness checks
 - **Pagination**: Prevents unbounded loops in user history queries
+- **Single Hash Function**: Unified signature verification and idempotency
 
 ### **Throughput**
 - **Single Withdrawals**: ~200k gas (~$0.50-2.00)
-- **Batch Withdrawals**: ~50k gas per additional withdrawal
 - **Deposit Credits**: ~100k gas (~$0.25-1.00)
+- **Fund Collection**: ~150k gas (~$0.40-1.50)
 
 ### **Scalability Features**
 - **Event-Driven**: Off-chain processing doesn't block on-chain operations
@@ -375,7 +402,8 @@ constructor(
     owner: ContractAddress,              // DEFAULT_ADMIN_ROLE
     usdc_token: ContractAddress,         // Primary token
     backend_admin: ContractAddress,      // BACKEND_ADMIN_ROLE
-    initial_manual_admins: Array<ContractAddress>  // MANUAL_ADMIN_ROLE
+    initial_manual_admins: Array<ContractAddress>,  // MANUAL_ADMIN_ROLE
+    chain_id: felt252                    // Chain ID for domain separation
 )
 ```
 
@@ -443,13 +471,14 @@ DepositCompleted {
 }
 ```
 
-### **Batch Events**
+### **Treasury Events**
 ```cairo
-// Batch withdrawal processed
-BatchWithdrawalProcessed {
-    batch_id: u256,
-    total_withdrawals: u256,
-    total_amount: u256,
+// Funds collected to treasury
+PayoutToTreasury {
+    withdrawal_id: u256,
+    treasury_address: ContractAddress,
+    amount: u256,
+    token_address: ContractAddress,
     timestamp: u64,
 }
 ```
@@ -491,3 +520,23 @@ BatchWithdrawalProcessed {
 - **Compliance**: Audit trail for regulatory requirements
 
 This contract provides a complete, production-ready solution for crypto ↔ fiat bridges with enterprise-grade security and performance.
+
+---
+
+## 📚 **Additional Documentation**
+
+- **[Token Approval Guide](TOKEN_APPROVAL_GUIDE.md)**: Complete guide for approving tokens before withdrawals
+- **[Contract Source](contract/src/lib.cairo)**: Full contract implementation with comprehensive event documentation
+- **[Legacy Implementation](contract/src/legacy_withdrawal.cairo)**: Reference implementation for simple deployments
+
+---
+
+## 🚀 **Quick Start**
+
+1. **Deploy Contract**: Use the constructor with proper role assignments
+2. **Set Backend Key**: Configure signature verification
+3. **Approve Tokens**: Follow the [Token Approval Guide](TOKEN_APPROVAL_GUIDE.md)
+4. **Test Withdrawal**: Start with small amounts on testnet
+5. **Monitor Events**: Set up event listeners for withdrawal processing
+
+For detailed integration examples and troubleshooting, see the comprehensive guides above.

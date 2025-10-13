@@ -9,6 +9,11 @@ const UserSchema = new Schema<IUserDocument>({
     lowercase: true,
     trim: true
   },
+  password: {
+    type: String,
+    required: false, // Optional for social login users
+    trim: true
+  },
   name: {
     type: String,
     required: true,
@@ -47,6 +52,10 @@ const UserSchema = new Schema<IUserDocument>({
       type: String,
       required: true
     },
+    bankCode: {
+      type: String,
+      required: true
+    },
     accountNumber: {
       type: String,
       required: true
@@ -77,7 +86,7 @@ const UserSchema = new Schema<IUserDocument>({
 
 // Indexes for better query performance
 UserSchema.index({ email: 1 }, { unique: true });
-UserSchema.index({ chipiWalletAddress: 1 }, { unique: true, sparse: true });
+// Note: chipiWalletAddress index is defined in the schema above with sparse: true
 UserSchema.index({ 'bankDetails.accountNumber': 1 });
 
 // Virtual for formatted balance
@@ -92,5 +101,6 @@ UserSchema.virtual('formattedBalanceNGN').get(function() {
 // Ensure virtual fields are serialized
 UserSchema.set('toJSON', { virtuals: true });
 UserSchema.set('toObject', { virtuals: true });
+
 
 export const User = mongoose.model<IUserDocument>('User', UserSchema);

@@ -10,85 +10,154 @@ import { Wallet, DollarSign, TrendingUp, History } from "lucide-react";
 import { cookies } from "@/lib/cookies";
 import { getTokenConfig, type TokenSymbol } from "@/lib/constants";
 import { normalizeHex } from "@/lib/utils";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { CreatePinModal } from "@/components/CreatePinModal";
-import { useCreateWallet } from "@chipi-stack/nextjs";
+import { WithdrawalModal } from "@/components/WithdrawalModal";
+import { FundCryptoModal } from "@/components/FundCryptoModal";
+import { TransferCryptoModal } from "@/components/TransferCryptoModal";
 
 interface UserData {
   id: string;
+
   email: string;
+
   name: string;
+
   chipiWalletAddress?: string;
+
   balanceUSD: number;
+
   balanceNGN: number;
+
+  hasBankDetails?: boolean;
+
+  bankDetails?: {
+    bankName?: string;
+    bankCode?: string;
+    accountNumber?: string;
+    accountName?: string;
+  };
 }
 
 export default function DashboardPage() {
   const [userData, setUserData] = useState<UserData | null>(null);
+
   const [balance, setBalance] = useState<string | null>(null); // USDT
+
   const [strkBalance, setStrkBalance] = useState<string | null>(null);
+
   const [fxRate, setFxRate] = useState<number | null>(null); // USD->NGN
+
   const [strkUsd, setStrkUsd] = useState<number | null>(null);
+
   const [loading, setLoading] = useState(true);
+
   const [dataLoading, setDataLoading] = useState(false); // For balances and rates
+
   const [error, setError] = useState("");
+
   const [showNGN, setShowNGN] = useState(true); // Default to NGN view
+
   const [showFundModal, setShowFundModal] = useState(false);
+
   const [showCreateWallet, setShowCreateWallet] = useState(false);
-  const { createWalletAsync, isLoading: creatingWallet } = useCreateWallet();
+
+  const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
+
+  const [showTransferModal, setShowTransferModal] = useState(false);
+
+  const [bankAccounts, setBankAccounts] = useState<
+    Array<{
+      _id: string;
+
+      bankName: string;
+
+      accountNumber: string;
+
+      accountName: string;
+    }>
+  >([]);
+
   const [pin, setPin] = useState("");
+  const [profileLoaded, setProfileLoaded] = useState(false);
+
   const router = useRouter();
+
+  // Removed automatic wallet creation modal - now handled in onboarding
 
   useEffect(() => {
     const checkAuth = async () => {
       const token = cookies.get("jwt");
+
       if (!token) {
         router.push("/login");
+
         return;
       }
 
       try {
         // Set loading to false immediately after getting user data
+
         const userRes = await api.user.profile(token);
+
         const freshUser = userRes.user || userRes.data || null;
-        
+
         if (freshUser) {
+          // Check if onboarding is complete - but allow exploration
+
+          // We'll show a banner instead of forcing redirect
+
           // Set user data immediately to show dashboard faster
+
           setUserData(freshUser);
           localStorage.setItem("user", JSON.stringify(freshUser));
+          setProfileLoaded(true);
 
           // (Legacy sync removed) chipiWalletAddress is the single source of truth
-          if (!freshUser.chipiWalletAddress) {
-            // Prompt user to create a wallet immediately after login
-            setShowCreateWallet(true);
-          }
+
+          // Don't automatically show wallet creation modal
+
+          // Users can create wallet via button if needed
+
+          // Set balance from user profile, others will be fetched from APIs
+
+          setBalance(freshUser.balanceUSD?.toString() || "0");
 
           // Set loading to false here so dashboard shows immediately
+
           setLoading(false);
 
           // Fetch balances and rates in parallel (non-blocking)
+
           const activeWallet = freshUser.chipiWalletAddress;
-          
+
           if (activeWallet) {
             // Set data loading state
+
             setDataLoading(true);
-            
+
             // Fetch all data in parallel for better performance
+
             Promise.allSettled([
               // USDC balance
+
               (async () => {
                 try {
                   const usdc = getTokenConfig("USDC") as {
                     address: string;
+
                     decimals: string;
                   };
+
                   const balanceRes = await api.chipipay.balance(
                     activeWallet,
+
                     usdc.address,
+
                     token
                   );
+
                   const formatted = balanceRes?.data?.formatted;
+
                   if (formatted && !isNaN(Number(formatted))) {
                     setBalance(formatted);
                   } else {
@@ -96,23 +165,31 @@ export default function DashboardPage() {
                   }
                 } catch (error) {
                   // Keep as null instead of setting to "0" to prevent snapping
+
                   setBalance(null);
                 }
               })(),
-              
+
               // STRK balance
+
               (async () => {
                 try {
                   const strk = getTokenConfig("STRK") as {
                     address: string;
+
                     decimals: string;
                   };
+
                   const strkRes = await api.chipipay.balance(
                     activeWallet,
+
                     strk.address,
+
                     token
                   );
+
                   const formatted = strkRes?.data?.formatted;
+
                   if (formatted && !isNaN(Number(formatted))) {
                     setStrkBalance(formatted);
                   } else {
@@ -120,27 +197,35 @@ export default function DashboardPage() {
                   }
                 } catch (error) {
                   // Keep as null instead of setting to "0" to prevent snapping
+
                   setStrkBalance(null);
                 }
               })(),
-              
+
               // FX rate and prices
+
               (async () => {
                 try {
                   const summaryRes = await api.transaction.summary(token);
+
                   const rate =
                     summaryRes.data?.exchangeRate ||
                     summaryRes.exchangeRate ||
                     0;
+
                   const strkPrice =
                     summaryRes.data?.prices?.STRK_USD ||
                     summaryRes.prices?.STRK_USD ||
                     0;
+
                   setFxRate(Number(rate) || 0);
+
                   setStrkUsd(Number(strkPrice) || 0);
                 } catch (error) {
                   // Keep as null instead of setting to 0 to prevent snapping
+
                   setFxRate(null);
+
                   setStrkUsd(null);
                 }
               })(),
@@ -148,27 +233,34 @@ export default function DashboardPage() {
               setDataLoading(false);
             });
           }
-          
+
           return;
         }
-        
+
         // If response shape unexpected, fall through to cached user
+
         throw new Error("Invalid profile response");
       } catch {
         // Fallback to cached user (cookie or localStorage)
+
         const cookieUser = cookies.get("user");
+
         const userStr = cookieUser || localStorage.getItem("user");
+
         if (userStr) {
           try {
             const cachedUser = JSON.parse(userStr);
+
             setUserData(cachedUser);
           } catch {
             // ignore parse errors
           }
         }
+
         if (!userStr) {
           setError("Failed to load user data");
         }
+
         setLoading(false);
       }
     };
@@ -178,14 +270,45 @@ export default function DashboardPage() {
 
   const handleLogout = () => {
     localStorage.clear();
+
     // Remove all auth-related cookies
+
     cookies.removeMultiple([
       "jwt",
+
       "accessToken",
+
       "refreshToken",
+
       "walletAddress",
+
       "user",
     ]);
+
+    // Clear all state immediately
+
+    setUserData(null);
+
+    setBalance(null);
+
+    setStrkBalance(null);
+
+    setFxRate(null);
+
+    setStrkUsd(null);
+
+    setLoading(true);
+
+    setDataLoading(false);
+
+    setError("");
+
+    setShowFundModal(false);
+
+    setShowCreateWallet(false);
+
+    setPin("");
+
     router.push("/login");
   };
 
@@ -193,36 +316,49 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen bg-background">
         <Navigation landing={false} />
+
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="mb-6">
             <div className="h-8 w-40 bg-muted rounded animate-pulse" />
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="border rounded-lg p-4">
                 <div className="flex items-center justify-between mb-4">
                   <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+
                   <div className="h-6 w-6 bg-muted rounded-full animate-pulse" />
                 </div>
+
                 <div className="h-7 w-24 bg-muted rounded mb-2 animate-pulse" />
+
                 <div className="h-3 w-32 bg-muted rounded animate-pulse" />
               </div>
             ))}
           </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="border rounded-lg p-6">
               <div className="h-5 w-32 bg-muted rounded mb-4 animate-pulse" />
+
               <div className="space-y-3">
                 <div className="h-10 w-full bg-muted rounded animate-pulse" />
+
                 <div className="h-10 w-full bg-muted rounded animate-pulse" />
+
                 <div className="h-10 w-full bg-muted rounded animate-pulse" />
               </div>
             </div>
+
             <div className="border rounded-lg p-6">
               <div className="h-5 w-40 bg-muted rounded mb-4 animate-pulse" />
+
               <div className="space-y-3">
                 <div className="h-4 w-48 bg-muted rounded animate-pulse" />
+
                 <div className="h-4 w-56 bg-muted rounded animate-pulse" />
+
                 <div className="h-4 w-64 bg-muted rounded animate-pulse" />
               </div>
             </div>
@@ -237,6 +373,7 @@ export default function DashboardPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-500">{error}</p>
+
           <Button onClick={() => window.location.reload()} className="mt-4">
             Retry
           </Button>
@@ -250,6 +387,7 @@ export default function DashboardPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <p className="text-muted-foreground">No user data found</p>
+
           <Button onClick={() => router.push("/login")} className="mt-4">
             Go to Login
           </Button>
@@ -259,36 +397,97 @@ export default function DashboardPage() {
   }
 
   const displayWallet = normalizeHex(userData.chipiWalletAddress || "");
-  
+
   // Check if wallet address is actually valid
+
   const hasValidWallet =
     displayWallet &&
     displayWallet.length >= 42 &&
     displayWallet.startsWith("0x");
-  
+
   const finalDisplayWallet = hasValidWallet
     ? displayWallet
     : "Wallet Address unavailable";
+
   const hasChipiWallet = !!userData?.chipiWalletAddress;
+
+  // Compute onboarding status using either backend flag or explicit fields
+  const hasBankComplete =
+    Boolean(userData?.hasBankDetails) ||
+    (Boolean(userData?.bankDetails?.bankName) &&
+      Boolean(userData?.bankDetails?.bankCode) &&
+      Boolean(userData?.bankDetails?.accountNumber) &&
+      Boolean(userData?.bankDetails?.accountName));
+  const needsOnboarding = !userData?.chipiWalletAddress || !hasBankComplete;
 
   return (
     <div className="min-h-screen bg-background">
       <Navigation landing={false} />
+
+      {/* Onboarding Completion Banner */}
+
+      {!loading && profileLoaded && needsOnboarding && (
+        <div className="bg-orange-50 border-l-4 border-orange-400 p-4">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col lg:flex-row gap-y-2 lg:items-center justify-between">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <svg
+                    className="h-5 w-5 text-orange-400"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+
+                <div className="ml-3">
+                  <p className="text-sm text-orange-700">
+                    <strong>Complete your profile</strong> to unlock all SendPay
+                    features and start receiving payments.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex-shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => router.push("/login?onboarding=true")}
+                  className="text-orange-700 border-orange-300 hover:bg-orange-100"
+                >
+                  Complete Profile
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="flex flex-col md:flex-row justify-between md:items-center mb-8">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">Dashboard</h1>
+            <h1 className="text-xl mb-2 md:text-3xl font-bold">
+              Welcome, {userData.name}
+            </h1>
+
             {!hasChipiWallet && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>Wallet not configured</span>
               </div>
             )}
+
             {hasChipiWallet && !dataLoading && (!balance || !strkBalance) && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>Some data failed to load</span>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
+
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => window.location.reload()}
                   className="h-6 px-2 text-xs"
                 >
@@ -297,29 +496,34 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
           <div className="flex flex-col md:flex-row md:items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">Currency:</span>
-              <Button 
-                variant={showNGN ? "default" : "outline"} 
+
+              <Button
+                variant={showNGN ? "default" : "outline"}
                 size="sm"
                 onClick={() => setShowNGN(true)}
               >
                 NGN
               </Button>
-              <Button 
-                variant={!showNGN ? "default" : "outline"} 
+
+              <Button
+                variant={!showNGN ? "default" : "outline"}
                 size="sm"
                 onClick={() => setShowNGN(false)}
               >
                 USD
               </Button>
             </div>
+
             {fxRate && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>Rate: 1$ = ₦{fxRate.toLocaleString()}</span>
               </div>
             )}
+
             <Button
               variant="outline"
               onClick={handleLogout}
@@ -336,35 +540,27 @@ export default function DashboardPage() {
               <CardTitle className="text-sm font-medium">
                 Total Balance ({showNGN ? "NGN" : "USD"})
               </CardTitle>
+
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
+
             <CardContent>
               {dataLoading ? (
                 <div className="space-y-2">
                   <div className="h-8 w-32 bg-muted rounded animate-pulse" />
+
                   <div className="h-4 w-48 bg-muted rounded animate-pulse" />
                 </div>
               ) : (
                 (() => {
-                  // Only show real values if we have actual data, not just default 0s
-                  if (
-                    balance === null &&
-                    strkBalance === null &&
-                    fxRate === null &&
-                    strkUsd === null
-                  ) {
-                    return (
-                      <div className="space-y-2">
-                        <div className="h-8 w-32 bg-muted rounded animate-pulse" />
-                        <div className="h-4 w-48 bg-muted rounded animate-pulse" />
-                      </div>
-                    );
-                  }
-
                   const usdtNum = Number(balance || "0");
+
                   const strkNum = Number(strkBalance || "0");
+
                   const totalUsd = usdtNum + strkNum * (strkUsd || 0);
+
                   const totalNgn = totalUsd * (fxRate || 0);
+
                   return (
                     <div className="transition-all duration-500 ease-out opacity-100">
                       <div className="text-3xl font-bold">
@@ -372,6 +568,7 @@ export default function DashboardPage() {
                           ? `₦${totalNgn.toLocaleString()}`
                           : `$${totalUsd.toFixed(2)}`}
                       </div>
+
                       <p className="text-sm text-muted-foreground">
                         ≈{" "}
                         {showNGN
@@ -390,29 +587,25 @@ export default function DashboardPage() {
               <CardTitle className="text-sm font-medium">
                 USDC Balance
               </CardTitle>
+
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
+
             <CardContent>
               {dataLoading ? (
                 <div className="space-y-2">
                   <div className="h-6 w-24 bg-muted rounded animate-pulse" />
+
                   <div className="h-4 w-40 bg-muted rounded animate-pulse" />
                 </div>
               ) : (
                 (() => {
-                  // Only show real values if we have actual data, not just default 0s
-                  if (balance === null && fxRate === null) {
-                    return (
-                      <div className="space-y-2">
-                        <div className="h-6 w-24 bg-muted rounded animate-pulse" />
-                        <div className="h-4 w-40 bg-muted rounded animate-pulse" />
-                      </div>
-                    );
-                  }
-
                   const usdcNum = Number(balance || "0");
+
                   const usdcUsd = usdcNum; // 1 USDC = 1 USD
+
                   const usdcNgn = usdcUsd * (fxRate || 0);
+
                   return (
                     <div className="transition-all duration-500 ease-out opacity-100">
                       <div className="text-2xl font-bold">
@@ -420,6 +613,7 @@ export default function DashboardPage() {
                           ? `₦${usdcNgn.toLocaleString()}`
                           : `${usdcNum} USDC`}
                       </div>
+
                       <p className="text-sm text-muted-foreground">
                         {showNGN
                           ? `≈ ${usdcNum} USDC ($${usdcUsd.toFixed(2)})`
@@ -437,33 +631,25 @@ export default function DashboardPage() {
               <CardTitle className="text-sm font-medium">
                 STRK Balance
               </CardTitle>
+
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
+
             <CardContent>
               {dataLoading ? (
                 <div className="space-y-2">
                   <div className="h-6 w-24 bg-muted rounded animate-pulse" />
+
                   <div className="h-4 w-40 bg-muted rounded animate-pulse" />
                 </div>
               ) : (
                 (() => {
-                  // Only show real values if we have actual data, not just default 0s
-                  if (
-                    strkBalance === null &&
-                    strkUsd === null &&
-                    fxRate === null
-                  ) {
-                    return (
-                      <div className="space-y-2">
-                        <div className="h-6 w-24 bg-muted rounded animate-pulse" />
-                        <div className="h-4 w-40 bg-muted rounded animate-pulse" />
-                      </div>
-                    );
-                  }
-
                   const strkNum = Number(strkBalance || "0");
+
                   const strkUsdValue = strkNum * (strkUsd || 0);
+
                   const strkNgn = strkUsdValue * (fxRate || 0);
+
                   return (
                     <div className="transition-all duration-500 ease-out opacity-100">
                       <div className="text-2xl font-bold">
@@ -471,6 +657,7 @@ export default function DashboardPage() {
                           ? `₦${strkNgn.toLocaleString()}`
                           : `${strkNum} STRK`}
                       </div>
+
                       <p className="text-sm text-muted-foreground">
                         {showNGN
                           ? `≈ ${strkNum} STRK ($${strkUsdValue.toFixed(2)})`
@@ -488,10 +675,13 @@ export default function DashboardPage() {
               <CardTitle className="text-sm font-medium">
                 Account Status
               </CardTitle>
+
               <History className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
+
             <CardContent>
               <div className="text-2xl font-bold">Active</div>
+
               <p className="text-xs text-muted-foreground">
                 Ready for transactions
               </p>
@@ -504,32 +694,40 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <Button 
-                className="w-full" 
-                onClick={() => {
-                  if (hasValidWallet) {
-                    setShowFundModal(true);
-                  } else {
-                    // Show a message that the wallet is not configured
-                    alert(
-                      "Please contact support to configure your Starknet wallet address before using the fund account feature."
-                    );
-                  }
-                }}
-                disabled={!hasValidWallet}
-              >
-                {hasValidWallet
-                  ? "Fund Account"
-                  : "Fund Account (Not Configured)"}
-              </Button>
+
+            <CardContent className="space-y-2">
+              {!hasValidWallet ? (
+                <Button
+                  className="w-full"
+                  onClick={() => setShowCreateWallet(true)}
+                >
+                  Create Wallet
+                </Button>
+              ) : (
+                <Button
+                  className="w-full"
+                  onClick={() => setShowFundModal(true)}
+                >
+                  Fund Crypto
+                </Button>
+              )}
+
               <Button
                 className="w-full"
                 variant="outline"
-                onClick={() => router.push("/withdraw")}
+                onClick={() => setShowTransferModal(true)}
               >
-                Withdraw Funds
+                Transfer Crypto
               </Button>
+
+              <Button
+                className="w-full"
+                variant="outline"
+                onClick={() => setShowWithdrawalModal(true)}
+              >
+                Withdraw to Bank
+              </Button>
+
               <Button
                 className="w-full"
                 variant="outline"
@@ -537,58 +735,82 @@ export default function DashboardPage() {
               >
                 View History
               </Button>
-              {!hasValidWallet && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                  <p className="text-xs text-yellow-800">
-                    <strong>Wallet Not Configured:</strong> Please contact
-                    support to configure your Starknet wallet address before
-                    using the fund account feature.
-                  </p>
-                </div>
-              )}
             </CardContent>
           </Card>
 
-        <Card>
-          <CardHeader>
+          <Card>
+            <CardHeader>
               <CardTitle>Account Information</CardTitle>
-          </CardHeader>
+            </CardHeader>
+
             <CardContent className="space-y-4">
-                    <div>
+              <div>
                 <label className="text-sm font-medium">Name</label>
+
                 <p className="text-sm text-muted-foreground">{userData.name}</p>
-                    </div>
+              </div>
+
               <div>
                 <label className="text-sm font-medium">Email</label>
+
                 <p className="text-sm text-muted-foreground">
                   {userData.email}
                 </p>
-                  </div>
+              </div>
+
               <div>
                 <label className="text-sm font-medium">Wallet Address</label>
-                {finalDisplayWallet ? (
-                  <div>
-                    <p className="text-sm font-mono text-muted-foreground break-all">
-                      {finalDisplayWallet}
-                    </p>
-                    {!hasValidWallet && (
-                      <p className="text-xs text-yellow-600 mt-1">
-                        Demo address - Contact support to configure your wallet
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm text-yellow-600">
-                    Not configured - Please contact support
+
+                {finalDisplayWallet && hasValidWallet ? (
+                  <p className="text-sm font-mono text-muted-foreground break-all">
+                    {finalDisplayWallet}
                   </p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      No wallet created yet
+                    </p>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowCreateWallet(true)}
+                    >
+                      Create Wallet
+                    </Button>
+                  </div>
                 )}
-            </div>
-          </CardContent>
-        </Card>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
-      <CreatePinModal open={showCreateWallet} onClose={() => setShowCreateWallet(false)} userId={userData.id} />
-              </div>
+      <CreatePinModal
+        open={showCreateWallet}
+        onClose={() => setShowCreateWallet(false)}
+        onSuccess={(walletPublicKey) => {
+          setUserData((prev) =>
+            prev ? { ...prev, chipiWalletAddress: walletPublicKey } : prev
+          );
+          setShowCreateWallet(false);
+        }}
+      />
+      <WithdrawalModal
+        open={showWithdrawalModal}
+        onClose={() => setShowWithdrawalModal(false)}
+        userWalletAddress={userData.chipiWalletAddress || ""}
+        bankAccounts={bankAccounts}
+      />
+      <FundCryptoModal
+        open={showFundModal}
+        onClose={() => setShowFundModal(false)}
+        walletAddress={userData.chipiWalletAddress || ""}
+      />
+      <TransferCryptoModal
+        open={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+      />
+    </div>
   );
 }

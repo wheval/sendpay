@@ -28,6 +28,12 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
         chipiWalletAddress: freshUser.chipiWalletAddress,
         balanceUSD: freshUser.balanceUSD,
         balanceNGN: freshUser.balanceNGN,
+        hasBankDetails: Boolean(
+          freshUser.bankDetails &&
+          freshUser.bankDetails.bankName && freshUser.bankDetails.bankName !== 'Not Set' &&
+          freshUser.bankDetails.accountName && freshUser.bankDetails.accountName !== 'Not Set' &&
+          freshUser.bankDetails.accountNumber && freshUser.bankDetails.accountNumber !== '0000000000'
+        ),
         bankDetails: freshUser.bankDetails
       }
     });
@@ -70,6 +76,12 @@ router.post('/wallet-sync', authenticateToken, async (req: Request, res: Respons
         chipiWalletAddress: user.chipiWalletAddress,
         balanceUSD: user.balanceUSD,
         balanceNGN: user.balanceNGN,
+        hasBankDetails: Boolean(
+          user.bankDetails &&
+          user.bankDetails.bankName && user.bankDetails.bankName !== 'Not Set' &&
+          user.bankDetails.accountName && user.bankDetails.accountName !== 'Not Set' &&
+          user.bankDetails.accountNumber && user.bankDetails.accountNumber !== '0000000000'
+        ),
         bankDetails: user.bankDetails
       }
     });

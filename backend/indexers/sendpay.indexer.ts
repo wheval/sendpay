@@ -6,14 +6,20 @@ import mongoose from "mongoose";
 import { WatcherState } from "../src/models/WatcherState";
 import { ProcessedEvent } from "../src/models/ProcessedEvent";
 import { Transaction } from "../src/models/Transaction";
+import { BankAccount } from "../src/models/BankAccount";
+import { flutterwaveService } from "../src/services/flutterwave.service";
+import { exchangeRateService } from "../src/services/exchange-rate.service";
 
-// Event selectors from SendPay ABI
+// Event selectors from SendPay ABI (using the correct event names from deployed contract)
 const EVENT_SELECTORS = {
-  WithdrawalProcessed: getSelector("WithdrawalProcessed"),
-  BatchWithdrawalProcessed: getSelector("BatchWithdrawalProcessed"),
-  TokenApprovalUpdated: getSelector("TokenApprovalUpdated"),
+  WithdrawalCreated: getSelector("WithdrawalCreated"),
+  WithdrawalCompleted: getSelector("WithdrawalCompleted"),
+  WithdrawalFailed: getSelector("WithdrawalFailed"),
+  DepositCompleted: getSelector("DepositCompleted"),
   EmergencyPaused: getSelector("EmergencyPaused"),
   EmergencyResumed: getSelector("EmergencyResumed"),
+  RoleChanged: getSelector("RoleChanged"),
+  PayoutToTreasury: getSelector("PayoutToTreasury"),
 };
 
 function toHex(value: string | number | bigint): `0x${string}` {
@@ -70,78 +76,287 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
         const txHash = event.transactionHash;
         const logIndex = event.eventIndex;
 
-        // de-duplication
+        // de-duplication and event data storage
+        let eventType = "Unknown";
+        let eventData: any = {};
+
+        // Determine event type and parse data based on actual ABI structure
+        if (selector === EVENT_SELECTORS.WithdrawalCreated) {
+          eventType = "WithdrawalCreated";
+          // Data structure from ABI: withdrawal_id, user, amount, token_address, tx_ref, timestamp, block_number
+          const withdrawalId = readU256(event.data as any, 0);
+          const user = toHex(event.data[2] as any);
+          const amount = readU256(event.data as any, 3);
+          const tokenAddress = toHex(event.data[5] as any);
+          const txRef = event.data[6] as string;
+          const timestamp = Number(event.data[7]);
+          const blockNumber = Number(event.data[8]);
+
+          eventData = {
+            withdrawalId: withdrawalId.toString(),
+            user,
+            amount: amount.toString(),
+            tokenAddress,
+            txRef,
+            timestamp,
+            blockNumber
+          };
+        } else if (selector === EVENT_SELECTORS.WithdrawalCompleted) {
+          eventType = "WithdrawalCompleted";
+          // Data structure from ABI: withdrawal_id, user, amount, token_address, tx_ref, timestamp, block_number
+          const withdrawalId = readU256(event.data as any, 0);
+          const user = toHex(event.data[2] as any);
+          const amount = readU256(event.data as any, 3);
+          const tokenAddress = toHex(event.data[5] as any);
+          const txRef = event.data[6] as string;
+          const timestamp = Number(event.data[7]);
+          const blockNumber = Number(event.data[8]);
+
+          eventData = {
+            withdrawalId: withdrawalId.toString(),
+            user,
+            amount: amount.toString(),
+            tokenAddress,
+            txRef,
+            timestamp,
+            blockNumber
+          };
+        } else if (selector === EVENT_SELECTORS.WithdrawalFailed) {
+          eventType = "WithdrawalFailed";
+          // Data structure from ABI: withdrawal_id, user, amount, token_address, tx_ref, timestamp, block_number
+          const withdrawalId = readU256(event.data as any, 0);
+          const user = toHex(event.data[2] as any);
+          const amount = readU256(event.data as any, 3);
+          const tokenAddress = toHex(event.data[5] as any);
+          const txRef = event.data[6] as string;
+          const timestamp = Number(event.data[7]);
+          const blockNumber = Number(event.data[8]);
+
+          eventData = {
+            withdrawalId: withdrawalId.toString(),
+            user,
+            amount: amount.toString(),
+            tokenAddress,
+            txRef,
+            timestamp,
+            blockNumber
+          };
+        } else if (selector === EVENT_SELECTORS.DepositCompleted) {
+          eventType = "DepositCompleted";
+          // Data structure from ABI: user, amount, token_address, fiat_tx_ref, timestamp
+          const user = toHex(event.data[0] as any);
+          const amount = readU256(event.data as any, 1);
+          const tokenAddress = toHex(event.data[3] as any);
+          const fiatTxRef = event.data[4] as string;
+          const timestamp = Number(event.data[5]);
+
+          eventData = {
+            user,
+            amount: amount.toString(),
+            tokenAddress,
+            fiatTxRef,
+            timestamp
+          };
+        } else if (selector === EVENT_SELECTORS.EmergencyPaused) {
+          eventType = "EmergencyPaused";
+          // Data structure from ABI: reason, timestamp
+          const reason = event.data[0] as string;
+          const timestamp = Number(event.data[1]);
+
+          eventData = {
+            reason,
+            timestamp
+          };
+        } else if (selector === EVENT_SELECTORS.EmergencyResumed) {
+          eventType = "EmergencyResumed";
+          // Data structure from ABI: timestamp
+          const timestamp = Number(event.data[0]);
+
+          eventData = {
+            timestamp
+          };
+        } else if (selector === EVENT_SELECTORS.RoleChanged) {
+          eventType = "RoleChanged";
+          // Data structure from ABI: role, old_admin, new_admin, timestamp
+          const role = event.data[0] as string;
+          const oldAdmin = toHex(event.data[1] as any);
+          const newAdmin = toHex(event.data[2] as any);
+          const timestamp = Number(event.data[3]);
+
+          eventData = {
+            role,
+            oldAdmin,
+            newAdmin,
+            timestamp
+          };
+        } else if (selector === EVENT_SELECTORS.PayoutToTreasury) {
+          eventType = "PayoutToTreasury";
+          // Data structure from ABI: withdrawal_id, treasury_address, amount, token_address, timestamp
+          const withdrawalId = readU256(event.data as any, 0);
+          const treasuryAddress = toHex(event.data[2] as any);
+          const amount = readU256(event.data as any, 3);
+          const tokenAddress = toHex(event.data[5] as any);
+          const timestamp = Number(event.data[6]);
+
+          eventData = {
+            withdrawalId: withdrawalId.toString(),
+            treasuryAddress,
+            amount: amount.toString(),
+            tokenAddress,
+            timestamp
+          };
+        }
+
         try {
-          await ProcessedEvent.create({ txHash, logIndex, processedAt: new Date() });
+          await ProcessedEvent.create({ 
+            txHash, 
+            logIndex, 
+            eventType,
+            eventData,
+            processedAt: new Date() 
+          });
         } catch (e) {
           // Duplicate event; skip
           continue;
         }
 
-        if (selector === EVENT_SELECTORS.WithdrawalProcessed) {
-          // Data layout (flattened):
-          // withdrawal_id.low, withdrawal_id.high,
-          // user,
-          // amount.low, amount.high,
-          // token_address,
-          // bank_account, bank_name, account_name,
-          // timestamp, block_number,
-          // status
-          const withdrawalId = readU256(event.data as any, 0);
-          const user = toHex(event.data[2] as any);
-          const amount = readU256(event.data as any, 3);
-          const tokenAddress = toHex(event.data[5] as any);
-          const bankAccount = event.data[6];
-          const bankName = event.data[7];
-          const accountName = event.data[8];
-          const timestamp = Number(event.data[9]);
-          const blockNumber = Number(event.data[10]);
-          const status = event.data[11];
+        if (selector === EVENT_SELECTORS.WithdrawalCreated) {
+          // Use already parsed data from eventData
+          const { withdrawalId, user, amount, tokenAddress, txRef } = eventData;
 
+          // Find the pending transaction created by our backend signature step using tx_ref
+          const pendingTx = await Transaction.findOne({ "metadata.txRef": txRef });
+          if (pendingTx) {
+            // Save linkage and mark as fiat_processing
+            pendingTx.status = "pending";
+            pendingTx.metadata = {
+              ...pendingTx.metadata,
+              withdrawalId: withdrawalId,
+              user,
+              amount: amount,
+              tokenAddress,
+              onchainTxHash: txHash,
+            } as any;
+            await pendingTx.save();
+
+            try {
+              // Load bank details from stored bankAccountId (server-side PII only)
+              const bankAccountId = (pendingTx.metadata as any)?.bankAccountId;
+              if (bankAccountId) {
+                const bank = await BankAccount.findById(bankAccountId);
+                if (bank) {
+                  // Convert amount (assumes amount is USDC with 6 decimals)
+                  const usdAmount = Number(amount) / 1e6;
+                  const ngnAmount = await exchangeRateService.convertUSDToNGN(usdAmount);
+                  const reference = `wd_${withdrawalId}`;
+
+                  const transfer = await flutterwaveService.initiatePayout({
+                    bankCode: bank.bankCode,
+                    accountNumber: bank.accountNumber,
+                    amount: ngnAmount,
+                    narration: `SendPay withdrawal ${reference}`,
+                    reference,
+                    beneficiaryName: bank.accountName || "Beneficiary",
+                  });
+
+                  await Transaction.findByIdAndUpdate(pendingTx._id, {
+                    $set: {
+                      status: "pending",
+                      metadata: {
+                        ...(pendingTx.metadata as any),
+                        flutterwave_reference: transfer?.data?.reference || reference,
+                        flutterwave_transfer_id: transfer?.data?.id || null,
+                      },
+                    },
+                  });
+                }
+              }
+            } catch (err) {
+              useLogger().error("[sendpay.indexer] Payout initiation failed", err);
+            }
+          }
+
+        } else if (selector === EVENT_SELECTORS.WithdrawalCompleted) {
+          const { withdrawalId } = eventData;
+          await Transaction.updateMany(
+            { "metadata.withdrawalId": withdrawalId },
+            {
+              $set: {
+                status: "completed",
+                metadata: { updatedAt: new Date(), event: "WithdrawalCompleted" },
+              },
+            }
+          );
+
+        } else if (selector === EVENT_SELECTORS.WithdrawalFailed) {
+          const { withdrawalId } = eventData;
+          await Transaction.updateMany(
+            { "metadata.withdrawalId": withdrawalId },
+            {
+              $set: {
+                status: "failed",
+                metadata: { updatedAt: new Date(), event: "WithdrawalFailed" },
+              },
+            }
+          );
+
+        } else if (selector === EVENT_SELECTORS.DepositCompleted) {
+          // Handle on-ramp completion
+          const { user, amount, tokenAddress, fiatTxRef } = eventData;
+          
           await Transaction.findOneAndUpdate(
-            { starknetTxHash: txHash },
+            { "metadata.fiatTxRef": fiatTxRef },
             {
               status: "completed",
               starknetTxHash: txHash,
               $setOnInsert: {
-                description: "Withdrawal processed",
-                type: "withdrawn",
-                amountUSD: 0,
+                description: "Deposit completed",
+                type: "deposited",
+                amountUSD: Number(amount) / 1e6, // Convert from wei
                 amountNGN: 0,
                 userId: undefined,
               },
               metadata: {
-                event: "WithdrawalProcessed",
-                withdrawalId: withdrawalId.toString(),
+                event: "DepositCompleted",
                 user,
-                amount: amount.toString(),
+                amount: amount,
                 tokenAddress,
-                bankAccount,
-                bankName,
-                accountName,
-                timestamp,
-                blockNumber,
-                status,
+                fiatTxRef,
+                onchainTxHash: txHash,
               },
             },
             { upsert: true }
           );
-        } else if (selector === EVENT_SELECTORS.BatchWithdrawalProcessed) {
-          const batchId = readU256(event.data as any, 0).toString();
-          const totalWithdrawals = readU256(event.data as any, 2).toString();
-          const totalAmount = readU256(event.data as any, 4).toString();
-          const timestamp = Number(event.data[6]);
 
-          await ProcessedEvent.updateOne(
-            { txHash, logIndex },
-            { $set: { withdrawalId: batchId } }
+        } else if (selector === EVENT_SELECTORS.PayoutToTreasury) {
+          // Handle treasury payouts (failed withdrawal recoveries)
+          const { withdrawalId, treasuryAddress, amount, tokenAddress } = eventData;
+          
+          await Transaction.findOneAndUpdate(
+            { "metadata.withdrawalId": withdrawalId },
+            {
+              $set: {
+                status: "treasury_payout",
+                metadata: { 
+                  ...eventData,
+                  treasuryAddress,
+                  event: "PayoutToTreasury" 
+                },
+              },
+            }
           );
-        } else if (selector === EVENT_SELECTORS.TokenApprovalUpdated) {
-          // Optional: store as processed event metadata
-          await ProcessedEvent.updateOne(
-            { txHash, logIndex },
-            { $set: { processedAt: new Date() } }
-          );
+
+        } else if (selector === EVENT_SELECTORS.EmergencyPaused) {
+          // Log emergency pause
+          useLogger().warn("[sendpay.indexer] Contract emergency paused", eventData);
+
+        } else if (selector === EVENT_SELECTORS.EmergencyResumed) {
+          // Log emergency resume
+          useLogger().info("[sendpay.indexer] Contract emergency resumed", eventData);
+
+        } else if (selector === EVENT_SELECTORS.RoleChanged) {
+          // Log role changes
+          useLogger().info("[sendpay.indexer] Role changed", eventData);
         }
       }
     },
