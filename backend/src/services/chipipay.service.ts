@@ -51,12 +51,30 @@ export class ChipiPayService {
   async getWalletBalance(walletAddress: string, tokenAddress?: string) {
     try {
       if (tokenAddress) {
-        const balance = await starknetService.getTokenBalance(walletAddress, tokenAddress);
-        return { success: true, balance: String(balance), formatted: String(balance), tokenAddress };
+        // Handle STRK (native token) differently
+        if (tokenAddress === '0x0' || tokenAddress === 'STRK') {
+          const strkAddress = starknetService.getSTRKAddress();
+          const { balance, formatted } = await starknetService.getErc20Balance(walletAddress, strkAddress, 18);
+          return { success: true, balance, formatted, tokenAddress: 'STRK' };
+        }
+        
+        // Handle other ERC-20 tokens - determine decimals based on token
+        let decimals = 18; // Default to 18 decimals
+        
+        // Check if it's USDC by comparing with known USDC address
+        const usdcAddress = starknetService.getUSDCAddress();
+        if (tokenAddress.toLowerCase() === usdcAddress.toLowerCase()) {
+          decimals = 6;
+        }
+        
+        const { balance, formatted } = await starknetService.getErc20Balance(walletAddress, tokenAddress, decimals);
+        return { success: true, balance, formatted, tokenAddress };
       }
+      
+      // Default to USDC if no token specified
       const usdcAddress = starknetService.getUSDCAddress();
-      const balance = await starknetService.getTokenBalance(walletAddress, usdcAddress, '6');
-      return { success: true, balance: String(balance), formatted: String(balance), tokenAddress: usdcAddress };
+      const { balance, formatted } = await starknetService.getErc20Balance(walletAddress, usdcAddress, 6);
+      return { success: true, balance, formatted, tokenAddress: usdcAddress };
     } catch (error: any) {
       console.error('ChipiPay balance error:', error);
       throw new Error(`Failed to get balance: ${error.message}`);

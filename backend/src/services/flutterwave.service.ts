@@ -173,6 +173,75 @@ export class FlutterwaveService {
   }
 
   /**
+   * Direct Transfers API (new): create bank payout with NGN source
+   */
+  async createDirectTransfer(params: {
+    bankCode: string;
+    accountNumber: string;
+    amountNGN: number; // value applies to destination_currency
+    reference: string;
+    narration: string;
+    callback_url?: string;
+    sender?: { name?: string; phone?: string; email?: string };
+    traceId?: string;
+    idempotencyKey?: string;
+  }): Promise<any> {
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET');
+    }
+
+    const payload: any = {
+      action: 'instant',
+      type: 'bank',
+      callback_url: params.callback_url,
+      narration: params.narration,
+      reference: params.reference,
+      payment_instruction: {
+        amount: {
+          value: params.amountNGN,
+          applies_to: 'destination_currency',
+        },
+        source_currency: 'NGN',
+        destination_currency: 'NGN',
+        recipient: {
+          bank: {
+            code: params.bankCode,
+            account_number: params.accountNumber,
+          },
+        },
+      },
+    };
+    if (params.sender) {
+      payload.sender = { name: params.sender.name, phone: params.sender.phone, email: params.sender.email };
+    }
+
+    const response = await axios.post(
+      `${this.baseUrl}/direct-transfers`,
+      payload,
+      {
+        headers: {
+          ...(await this.getAuthHeader()),
+          'Content-Type': 'application/json',
+          ...(params.traceId ? { 'X-Trace-Id': params.traceId } : {}),
+          ...(params.idempotencyKey ? { 'X-Idempotency-Key': params.idempotencyKey } : {}),
+        },
+      },
+    );
+    return response.data;
+  }
+
+  async getDirectTransfer(transferId: string): Promise<any> {
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET');
+    }
+    const response = await axios.get(
+      `${this.baseUrl}/transfers/${transferId}`,
+      { headers: await this.getAuthHeader() },
+    );
+    return response.data;
+  }
+
+  /**
    * Verify payout status
    */
   async verifyPayout(transferId: number): Promise<any> {

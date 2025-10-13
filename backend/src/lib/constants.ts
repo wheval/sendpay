@@ -10,7 +10,7 @@ const STRK: Record<StarknetNetwork, TokenConfig> = {
 
 const USDC: Record<StarknetNetwork, TokenConfig> = {
 	sepolia: { address: '0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080', decimals: 6 },
-	mainnet: { address: '0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf56a5fc', decimals: 6 }
+	mainnet: { address: '0x053C91253BC9682c04929cA02ED00b3E423f6710D2ee7e0D5EBB06F3eCF368A8', decimals: 6 }
 }
 
 const USDT: Record<StarknetNetwork, TokenConfig> = {
@@ -33,7 +33,6 @@ export const DEFAULT_USD_NGN_FALLBACK: number = Number(process.env.USD_NGN_FALLB
 
 // Contract addresses
 export const SENDPAY_CONTRACT_ADDRESS = process.env.SENDPAY_CONTRACT_ADDRESS || '0x0444d5c9b2a6375bdce805338cdf6340439be92aec2e854704e77bedcdfd929a'
-export const USDC_TESTNET_ADDRESS = process.env.USDC_TESTNET_ADDRESS || '0x053b40a647cedfca6ca84f542a0fe36736031905a9639a7f19a3c1e66bfd5080'
 
 // Flutterwave configuration
 export const FLUTTERWAVE_CLIENT_ID = process.env.FLUTTERWAVE_CLIENT_ID || ''

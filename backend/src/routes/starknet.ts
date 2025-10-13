@@ -36,46 +36,7 @@ router.get('/network-info', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /api/starknet/balance/:address
- * Get USDC balance for a wallet address
- */
-router.get('/balance/:address', async (req: Request, res: Response) => {
-  try {
-    const { address } = req.params;
-
-    if (!starknetService.isValidAddress(address)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid Starknet address format'
-      });
-    }
-
-    const balance = await starknetService.getUSDCBalance(address);
-    const exchangeRate = await exchangeRateService.getUSDToNGNRate();
-    const balanceNGN = await exchangeRateService.convertUSDToNGN(balance);
-
-    res.json({
-      success: true,
-      message: 'Balance retrieved successfully',
-      data: {
-        address,
-        balanceUSD: balance,
-        balanceNGN,
-        exchangeRate,
-        tokenAddress: starknetService.getUSDCAddress()
-      }
-    });
-
-  } catch (error: any) {
-    console.error('Balance retrieval error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve balance',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-    });
-  }
-});
+// Removed redundant balance endpoint; use /api/chipipay/balance instead
 
 /**
  * GET /api/starknet/transaction/:hash

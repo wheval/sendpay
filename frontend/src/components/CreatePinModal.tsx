@@ -139,7 +139,6 @@ export function CreatePinModal({ open, onClose, onSuccess }: CreatePinModalProps
 
       // Success! Surface response details and keep modal open so you can see it
       const result = data?.data || {};
-      console.log('Create wallet result:', result);
       toast({
         title: "Wallet Created Successfully!",
         description: ``,

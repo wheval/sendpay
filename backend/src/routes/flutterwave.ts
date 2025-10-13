@@ -196,28 +196,29 @@ router.post('/transfer', authenticateToken, async (req: Request, res: Response) 
     // Generate unique reference
     const reference = generateReference();
 
-    const transfer = await flutterwaveService.initiatePayout({
+    // Orchestrator Direct Transfer (NGN -> NGN)
+    const transfer = await flutterwaveService.createDirectTransfer({
       bankCode: accountBank,
       accountNumber,
-      amount,
-      narration,
+      amountNGN: Number(amount),
       reference,
-      beneficiaryName: beneficiaryName || 'Beneficiary'
+      narration,
+      callback_url: process.env.FLUTTERWAVE_CALLBACK_URL || undefined,
+      idempotencyKey: reference,
     });
 
     res.json({
       success: true,
       message: 'Transfer initiated successfully',
       data: {
-        transferId: transfer.data.id,
-        reference: transfer.data.reference,
-        status: transfer.data.status,
-        amount: transfer.data.amount,
-        currency: transfer.data.currency,
-        narration: transfer.data.narration,
-        bankName: transfer.data.bank_name,
-        accountNumber: transfer.data.account_number,
-        createdAt: transfer.data.created_at
+        transferId: transfer?.data?.id,
+        reference: transfer?.data?.reference || reference,
+        status: transfer?.data?.status || 'NEW',
+        amount: transfer?.data?.amount?.value || Number(amount),
+        currency: transfer?.data?.destination_currency || 'NGN',
+        narration,
+        bankCode: accountBank,
+        accountNumber,
       }
     });
   } catch (error: unknown) {
@@ -246,7 +247,8 @@ router.get('/transfer/:id', authenticateToken, async (req: Request, res: Respons
       });
     }
 
-    const transfer = await flutterwaveService.verifyPayout(parseInt(transferId));
+    // Use Direct Transfers fetch for orchestration transfers
+    const transfer = await flutterwaveService.getDirectTransfer(transferId);
 
     res.json({
       success: true,

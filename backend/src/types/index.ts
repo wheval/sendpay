@@ -77,6 +77,7 @@ export interface IStarknetConfig {
   chainId: string;
   contractAddress: string;
   usdcTokenAddress: string;
+  strkTokenAddress: string;
 }
 
 export interface IStarknetTransaction {

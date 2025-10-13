@@ -14,6 +14,7 @@ import { CreatePinModal } from "@/components/CreatePinModal";
 import { WithdrawalModal } from "@/components/WithdrawalModal";
 import { FundCryptoModal } from "@/components/FundCryptoModal";
 import { TransferCryptoModal } from "@/components/TransferCryptoModal";
+// Using backend balance service for reliability
 
 interface UserData {
   id: string;
@@ -67,13 +68,13 @@ export default function DashboardPage() {
 
   const [bankAccounts, setBankAccounts] = useState<
     Array<{
-      _id: string;
+    _id: string;
 
-      bankName: string;
+    bankName: string;
 
-      accountNumber: string;
+    accountNumber: string;
 
-      accountName: string;
+    accountName: string;
     }>
   >([]);
 
@@ -100,143 +101,48 @@ export default function DashboardPage() {
         const userRes = await api.user.profile(token);
 
         const freshUser = userRes.user || userRes.data || null;
-
+        
         if (freshUser) {
-          // Check if onboarding is complete - but allow exploration
-
-          // We'll show a banner instead of forcing redirect
-
-          // Set user data immediately to show dashboard faster
-
           setUserData(freshUser);
           localStorage.setItem("user", JSON.stringify(freshUser));
           setProfileLoaded(true);
-
-          // (Legacy sync removed) chipiWalletAddress is the single source of truth
-
-          // Don't automatically show wallet creation modal
-
-          // Users can create wallet via button if needed
-
-          // Set balance from user profile, others will be fetched from APIs
-
           setBalance(freshUser.balanceUSD?.toString() || "0");
 
-          // Set loading to false here so dashboard shows immediately
 
           setLoading(false);
 
           // Fetch balances and rates in parallel (non-blocking)
 
           const activeWallet = freshUser.chipiWalletAddress;
-
+          
           if (activeWallet) {
             // Set data loading state
 
             setDataLoading(true);
-
-            // Fetch all data in parallel for better performance
-
+            
+            
             Promise.allSettled([
-              // USDC balance
-
-              (async () => {
-                try {
-                  const usdc = getTokenConfig("USDC") as {
-                    address: string;
-
-                    decimals: string;
-                  };
-
-                  const balanceRes = await api.chipipay.balance(
-                    activeWallet,
-
-                    usdc.address,
-
-                    token
-                  );
-
-                  const formatted = balanceRes?.data?.formatted;
-
-                  if (formatted && !isNaN(Number(formatted))) {
-                    setBalance(formatted);
-                  } else {
-                    setBalance("0");
-                  }
-                } catch (error) {
-                  // Keep as null instead of setting to "0" to prevent snapping
-
-                  setBalance(null);
-                }
-              })(),
-
-              // STRK balance
-
-              (async () => {
-                try {
-                  const strk = getTokenConfig("STRK") as {
-                    address: string;
-
-                    decimals: string;
-                  };
-
-                  const strkRes = await api.chipipay.balance(
-                    activeWallet,
-
-                    strk.address,
-
-                    token
-                  );
-
-                  const formatted = strkRes?.data?.formatted;
-
-                  if (formatted && !isNaN(Number(formatted))) {
-                    setStrkBalance(formatted);
-                  } else {
-                    setStrkBalance("0");
-                  }
-                } catch (error) {
-                  // Keep as null instead of setting to "0" to prevent snapping
-
-                  setStrkBalance(null);
-                }
-              })(),
-
-              // FX rate and prices
-
+              // FX rate
               (async () => {
                 try {
                   const summaryRes = await api.transaction.summary(token);
-
                   const rate =
                     summaryRes.data?.exchangeRate ||
                     summaryRes.exchangeRate ||
                     0;
-
-                  const strkPrice =
-                    summaryRes.data?.prices?.STRK_USD ||
-                    summaryRes.prices?.STRK_USD ||
-                    0;
-
                   setFxRate(Number(rate) || 0);
-
-                  setStrkUsd(Number(strkPrice) || 0);
                 } catch (error) {
-                  // Keep as null instead of setting to 0 to prevent snapping
-
                   setFxRate(null);
-
-                  setStrkUsd(null);
                 }
               })(),
             ]).then(() => {
               setDataLoading(false);
             });
           }
-
+          
           return;
         }
-
+        
         // If response shape unexpected, fall through to cached user
 
         throw new Error("Invalid profile response");
@@ -267,6 +173,100 @@ export default function DashboardPage() {
 
     checkAuth();
   }, [router]);
+
+  // Live balances using Chipi callAnyContract (preferred) with starknet.js fallback
+  const activeWallet = userData?.chipiWalletAddress || "";
+  const normalizedActiveWallet = activeWallet ? normalizeHex(activeWallet) : "";
+  const usdcCfg = getTokenConfig("USDC") as { address: string; decimals: string };
+  const strkCfg = getTokenConfig("STRK") as { address: string; decimals: string };
+  // Backend service will compute balances; no on-chain reads here
+
+  useEffect(() => {
+    (async () => {
+      if (!normalizedActiveWallet) return;
+      const token = cookies.get("jwt");
+      if (!token) return;
+      
+      // Set loading state
+      setDataLoading(true);
+      
+      try {
+        const usdcRes = await api.chipipay.balance(
+          normalizedActiveWallet,
+          usdcCfg.address,
+          token
+        );
+        const usdcFormatted = usdcRes?.data?.formatted;
+        setBalance(usdcFormatted && !isNaN(Number(usdcFormatted)) ? String(usdcFormatted) : "0");
+      } catch {
+        setBalance("0");
+      }
+      try {
+        const strkRes = await api.chipipay.balance(
+          normalizedActiveWallet,
+          'STRK', // Use 'STRK' identifier for native token
+          token
+        );
+        const strkFormatted = strkRes?.data?.formatted;
+        setStrkBalance(strkFormatted && !isNaN(Number(strkFormatted)) ? String(strkFormatted) : "0");
+      } catch {
+        setStrkBalance("0");
+      }
+      
+      // Clear loading state
+      setDataLoading(false);
+    })();
+  }, [normalizedActiveWallet, usdcCfg.address, strkCfg.address]);
+
+  // Short polling for balances (every 10s)
+  useEffect(() => {
+    if (!normalizedActiveWallet) return;
+    const token = cookies.get("jwt");
+    if (!token) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const usdcRes = await api.chipipay.balance(
+          normalizedActiveWallet,
+          usdcCfg.address,
+          token
+        );
+        const usdcFormatted = usdcRes?.data?.formatted;
+        if (usdcFormatted !== undefined && !isNaN(Number(usdcFormatted))) {
+          setBalance(String(usdcFormatted));
+        }
+      } catch {}
+
+      try {
+        const strkRes = await api.chipipay.balance(
+          normalizedActiveWallet,
+          'STRK', // Use 'STRK' identifier for native token
+          token
+        );
+        const strkFormatted = strkRes?.data?.formatted;
+        if (strkFormatted !== undefined && !isNaN(Number(strkFormatted))) {
+          setStrkBalance(String(strkFormatted));
+        }
+      } catch {}
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [normalizedActiveWallet, usdcCfg.address, strkCfg.address]);
+
+  // STRK price and FX rate from backend summary
+  useEffect(() => {
+    (async () => {
+      const token = cookies.get("jwt");
+      if (!token) return;
+      try {
+        const summaryRes = await api.transaction.summary(token);
+        const rate = summaryRes.data?.exchangeRate || summaryRes.exchangeRate;
+        const strkPrice = summaryRes.data?.prices?.STRK_USD || summaryRes.prices?.STRK_USD;
+        if (rate !== undefined && !isNaN(Number(rate))) setFxRate(Number(rate));
+        if (strkPrice !== undefined && !isNaN(Number(strkPrice))) setStrkUsd(Number(strkPrice));
+      } catch {}
+    })();
+  }, []);
 
   const handleLogout = () => {
     localStorage.clear();
@@ -397,14 +397,14 @@ export default function DashboardPage() {
   }
 
   const displayWallet = normalizeHex(userData.chipiWalletAddress || "");
-
+  
   // Check if wallet address is actually valid
 
   const hasValidWallet =
     displayWallet &&
     displayWallet.length >= 42 &&
     displayWallet.startsWith("0x");
-
+  
   const finalDisplayWallet = hasValidWallet
     ? displayWallet
     : "Wallet Address unavailable";
@@ -423,7 +423,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navigation landing={false} />
-
+      
       {/* Onboarding Completion Banner */}
 
       {!loading && profileLoaded && needsOnboarding && (
@@ -454,8 +454,8 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex-shrink-0">
-                <Button
-                  size="sm"
+                <Button 
+                  size="sm" 
                   variant="outline"
                   onClick={() => router.push("/login?onboarding=true")}
                   className="text-orange-700 border-orange-300 hover:bg-orange-100"
@@ -467,12 +467,12 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
+      
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="flex flex-col md:flex-row justify-between md:items-center mb-8">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl mb-2 md:text-3xl font-bold">
-              Welcome, {userData.name}
+            <h1 className="text-xl mb-2 md:text-3xl capitalize font-bold">
+              Welcome, {userData.name}.
             </h1>
 
             {!hasChipiWallet && (
@@ -485,9 +485,9 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>Some data failed to load</span>
 
-                <Button
-                  size="sm"
-                  variant="outline"
+                <Button 
+                  size="sm" 
+                  variant="outline" 
                   onClick={() => window.location.reload()}
                   className="h-6 px-2 text-xs"
                 >
@@ -501,16 +501,16 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">Currency:</span>
 
-              <Button
-                variant={showNGN ? "default" : "outline"}
+              <Button 
+                variant={showNGN ? "default" : "outline"} 
                 size="sm"
                 onClick={() => setShowNGN(true)}
               >
                 NGN
               </Button>
 
-              <Button
-                variant={!showNGN ? "default" : "outline"}
+              <Button 
+                variant={!showNGN ? "default" : "outline"} 
                 size="sm"
                 onClick={() => setShowNGN(false)}
               >
@@ -553,12 +553,23 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 (() => {
+                  // Show loading if balances are not loaded yet
+                  if (balance === null || strkBalance === null) {
+                    return (
+                      <div className="transition-all duration-500 ease-out opacity-100">
+                        <div className="text-3xl font-bold text-muted-foreground">
+                          Loading...
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Fetching balance data
+                        </p>
+                      </div>
+                    );
+                  }
+
                   const usdtNum = Number(balance || "0");
-
                   const strkNum = Number(strkBalance || "0");
-
                   const totalUsd = usdtNum + strkNum * (strkUsd || 0);
-
                   const totalNgn = totalUsd * (fxRate || 0);
 
                   return (
@@ -600,10 +611,19 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 (() => {
+                  // Show loading if balance is not loaded yet
+                  if (balance === null) {
+                    return (
+                      <div className="transition-all duration-500 ease-out opacity-100">
+                        <div className="text-xl font-bold text-muted-foreground">
+                          Loading...
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const usdcNum = Number(balance || "0");
-
                   const usdcUsd = usdcNum; // 1 USDC = 1 USD
-
                   const usdcNgn = usdcUsd * (fxRate || 0);
 
                   return (
@@ -611,12 +631,12 @@ export default function DashboardPage() {
                       <div className="text-2xl font-bold">
                         {showNGN
                           ? `₦${usdcNgn.toLocaleString()}`
-                          : `${usdcNum} USDC`}
+                          : `${usdcNum.toFixed(2)} USDC`}
                       </div>
 
                       <p className="text-sm text-muted-foreground">
                         {showNGN
-                          ? `≈ ${usdcNum} USDC ($${usdcUsd.toFixed(2)})`
+                          ? `≈ ${usdcNum.toFixed(2)} USDC ($${usdcUsd.toFixed(2)})`
                           : `≈ ₦${usdcNgn.toLocaleString()} NGN`}
                       </p>
                     </div>
@@ -644,10 +664,19 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 (() => {
+                  // Show loading if balance is not loaded yet
+                  if (strkBalance === null) {
+                    return (
+                      <div className="transition-all duration-500 ease-out opacity-100">
+                        <div className="text-xl font-bold text-muted-foreground">
+                          Loading...
+                        </div>
+                      </div>
+                    );
+                  }
+
                   const strkNum = Number(strkBalance || "0");
-
                   const strkUsdValue = strkNum * (strkUsd || 0);
-
                   const strkNgn = strkUsdValue * (fxRate || 0);
 
                   return (
@@ -660,7 +689,7 @@ export default function DashboardPage() {
 
                       <p className="text-sm text-muted-foreground">
                         {showNGN
-                          ? `≈ ${strkNum} STRK ($${strkUsdValue.toFixed(2)})`
+                          ? `≈ ${strkNum.toFixed(2)} STRK ($${strkUsdValue.toFixed(2)})`
                           : `≈ ₦${strkNgn.toLocaleString()} NGN`}
                       </p>
                     </div>
@@ -697,15 +726,15 @@ export default function DashboardPage() {
 
             <CardContent className="space-y-2">
               {!hasValidWallet ? (
-                <Button
-                  className="w-full"
+                <Button 
+                  className="w-full" 
                   onClick={() => setShowCreateWallet(true)}
                 >
                   Create Wallet
                 </Button>
               ) : (
-                <Button
-                  className="w-full"
+                <Button 
+                  className="w-full" 
                   onClick={() => setShowFundModal(true)}
                 >
                   Fund Crypto
@@ -720,13 +749,13 @@ export default function DashboardPage() {
                 Transfer Crypto
               </Button>
 
-              <Button
-                className="w-full"
-                variant="outline"
-                onClick={() => setShowWithdrawalModal(true)}
-              >
+                  <Button
+                    className="w-full"
+                    variant="outline"
+                    onClick={() => setShowWithdrawalModal(true)}
+                  >
                 Withdraw to Bank
-              </Button>
+                  </Button>
 
               <Button
                 className="w-full"
@@ -738,17 +767,17 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
+        <Card>
+          <CardHeader>
               <CardTitle>Account Information</CardTitle>
-            </CardHeader>
+          </CardHeader>
 
             <CardContent className="space-y-4">
-              <div>
+                    <div>
                 <label className="text-sm font-medium">Name</label>
 
                 <p className="text-sm text-muted-foreground">{userData.name}</p>
-              </div>
+                    </div>
 
               <div>
                 <label className="text-sm font-medium">Email</label>
@@ -756,7 +785,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-muted-foreground">
                   {userData.email}
                 </p>
-              </div>
+                  </div>
 
               <div>
                 <label className="text-sm font-medium">Wallet Address</label>
@@ -771,8 +800,8 @@ export default function DashboardPage() {
                       No wallet created yet
                     </p>
 
-                    <Button
-                      size="sm"
+                    <Button 
+                      size="sm" 
                       variant="outline"
                       onClick={() => setShowCreateWallet(true)}
                     >
@@ -780,9 +809,9 @@ export default function DashboardPage() {
                     </Button>
                   </div>
                 )}
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
         </div>
       </div>
 
@@ -796,8 +825,8 @@ export default function DashboardPage() {
           setShowCreateWallet(false);
         }}
       />
-      <WithdrawalModal
-        open={showWithdrawalModal}
+      <WithdrawalModal 
+        open={showWithdrawalModal} 
         onClose={() => setShowWithdrawalModal(false)}
         userWalletAddress={userData.chipiWalletAddress || ""}
         bankAccounts={bankAccounts}
@@ -810,7 +839,10 @@ export default function DashboardPage() {
       <TransferCryptoModal
         open={showTransferModal}
         onClose={() => setShowTransferModal(false)}
+        usdcBalance={balance}
+        strkBalance={strkBalance}
+        userWalletAddress={userData.chipiWalletAddress}
       />
-    </div>
+              </div>
   );
 }

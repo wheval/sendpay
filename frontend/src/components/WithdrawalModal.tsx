@@ -10,6 +10,7 @@ import { useTransfer, useCallAnyContract } from "@chipi-stack/nextjs";
 import { api } from "@/lib/api";
 import { getTokenConfig } from "@/lib/constants";
 import { cookies } from "@/lib/cookies";
+import { X } from "lucide-react";
 
 interface WithdrawalModalProps {
   open: boolean;
@@ -151,7 +152,7 @@ export function WithdrawalModal({ open, onClose, userWalletAddress, bankAccounts
         <CardHeader>
           <CardTitle className="flex justify-between items-center">
             Withdraw Funds
-            <Button variant="ghost" size="sm" onClick={onClose}>×</Button>
+            <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">

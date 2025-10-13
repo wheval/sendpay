@@ -2,6 +2,7 @@ import { RpcProvider, Account, Contract, cairo, uint256, CallData } from 'starkn
 import { IStarknetConfig, IStarknetTransaction } from '../types';
 import { SENDPAY_ABI } from '../lib/sendpay_abi';
 import { signatureService } from './signature.service';
+import { getTokenConfig, STARKNET_NETWORK } from '../lib/constants';
 
 class StarknetService {
   private provider: RpcProvider;
@@ -10,11 +11,17 @@ class StarknetService {
   private adminAccount: Account | null = null;
 
   constructor() {
+    // Get token configs based on current network
+    const usdcConfig = getTokenConfig('USDC');
+    const strkConfig = getTokenConfig('STRK');
+    
     this.config = {
       rpcUrl: process.env.STARKNET_RPC_URL || 'https://starknet-sepolia.public.blastapi.io/rpc/v0_7',
-      chainId: process.env.STARKNET_CHAIN_ID || 'SN_SEPOLIA',
+      chainId: process.env.STARKNET_CHAIN_ID || (STARKNET_NETWORK === 'mainnet' ? 'SN_MAIN' : 'SN_SEPOLIA'),
       contractAddress: process.env.SENDPAY_CONTRACT_ADDRESS || '0x0444d5c9b2a6375bdce805338cdf6340439be92aec2e854704e77bedcdfd929a',
-      usdcTokenAddress: process.env.USDC_TOKEN_ADDRESS || '0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf56a5fc'
+      // Use constants for token addresses based on network
+      usdcTokenAddress: process.env.USDC_TOKEN_ADDRESS || usdcConfig.address,
+      strkTokenAddress: process.env.STRK_TOKEN_ADDRESS || strkConfig.address
     };
 
     this.provider = new RpcProvider({
@@ -57,11 +64,11 @@ class StarknetService {
   }
 
   /**
-   * Fallback ERC20 balance call using RPC directly.
+   * ERC20 balance call using RPC directly.
    */
   public async getErc20Balance(accountAddress: string, tokenAddress: string, decimals: string | number = 18): Promise<{ balance: string; formatted: string }> {
-    const addr = accountAddress.toLowerCase()
-    const token = tokenAddress.toLowerCase()
+    const addr = this.normalizeHex(accountAddress)
+    const token = this.normalizeHex(tokenAddress)
     const dec = Number(decimals || 18)
 
     const calldata = [addr]
@@ -69,44 +76,83 @@ class StarknetService {
       contractAddress: token,
       entrypoint: 'balanceOf',
       calldata
-    })
+    }, 'latest' as any)
 
     // Expect Uint256 { low, high } — support both return shapes (array or { result })
-    const resultArray = Array.isArray(res) ? res : (res as any).result
+    const resultArray = Array.isArray(res) ? res : (res as any)?.result
     const [lowStr = '0x0', highStr = '0x0'] = (resultArray as string[]) || []
     const low = BigInt(lowStr)
     const high = BigInt(highStr)
     const value = (high << 128n) + low
     const denom = BigInt(10) ** BigInt(dec)
-    const formatted = Number(value) / Number(denom)
+    
+    // Format as decimal string to avoid scientific notation
+    const formatted = this.formatTokenAmount(value, dec)
 
-    return { balance: value.toString(), formatted: formatted.toString() }
+    return { balance: value.toString(), formatted }
+  }
+
+  /**
+   * Format token amount as decimal string to avoid scientific notation
+   */
+  private formatTokenAmount(amount: bigint, decimals: number): string {
+    const divisor = BigInt(10) ** BigInt(decimals)
+    const quotient = amount / divisor
+    const remainder = amount % divisor
+    
+    if (remainder === 0n) {
+      return quotient.toString()
+    }
+    
+    // Convert remainder to decimal string with proper padding
+    const remainderStr = remainder.toString().padStart(decimals, '0')
+    const trimmedRemainder = remainderStr.replace(/0+$/, '') // Remove trailing zeros
+    
+    if (trimmedRemainder === '') {
+      return quotient.toString()
+    }
+    
+    return `${quotient}.${trimmedRemainder}`
+  }
+
+  /**
+   * Get STRK balance for a wallet address
+   */
+  async getSTRKBalance(walletAddress: string): Promise<string> {
+    try {
+      const tokenAddress = this.config.strkTokenAddress;
+      const { formatted } = await this.getErc20Balance(walletAddress, tokenAddress, 18);
+      return formatted || '0';
+    } catch (error) {
+      console.warn('Error getting STRK balance:', (error as any)?.message || error);
+      return '0';
+    }
   }
 
   /**
    * Get USDC balance for a wallet address
    */
-  async getUSDCBalance(walletAddress: string): Promise<number> {
+  async getUSDCBalance(walletAddress: string): Promise<string> {
     try {
-      const tokenAddress = this.config.usdcTokenAddress
-      const { formatted } = await this.getErc20Balance(walletAddress, tokenAddress, 6)
-      return Number(formatted || '0') || 0
+      const tokenAddress = this.config.usdcTokenAddress;
+      const { formatted } = await this.getErc20Balance(walletAddress, tokenAddress, 6);
+      return formatted || '0';
     } catch (error) {
-      console.warn('Error getting USDC balance:', (error as any)?.message || error)
-      return 0;
+      console.warn('Error getting USDC balance:', (error as any)?.message || error);
+      return '0';
     }
   }
 
   /**
    * Get ERC-20 token balance for a wallet address
    */
-  async getTokenBalance(walletAddress: string, tokenAddress: string, decimals: string = '18'): Promise<number> {
+  async getTokenBalance(walletAddress: string, tokenAddress: string, decimals: string = '18'): Promise<string> {
     try {
-      const { formatted } = await this.getErc20Balance(walletAddress, tokenAddress, decimals)
-      return Number(formatted || '0') || 0
+      const { formatted } = await this.getErc20Balance(walletAddress, tokenAddress, decimals);
+      return formatted || '0';
     } catch (error) {
-      console.warn('Error getting token balance:', (error as any)?.message || error)
-      return 0;
+      console.warn('Error getting token balance:', (error as any)?.message || error);
+      return '0';
     }
   }
 
@@ -172,10 +218,21 @@ class StarknetService {
   isValidAddress(address: string): boolean {
     try {
       // Basic Starknet address validation
-      return /^0x[0-9a-fA-F]{63}$/.test(address);
+      return /^0x[0-9a-fA-F]{64}$/.test(address);
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Normalize to 0x + 64 lowercase hex
+   */
+  private normalizeHex(addr: string): string {
+    if (!addr) return '0x0'.padEnd(66, '0')
+    let clean = addr.toLowerCase().replace(/^0x/, '').replace(/[^0-9a-f]/g, '')
+    if (clean.length > 64) clean = clean.slice(-64)
+    if (clean.length < 64) clean = clean.padStart(64, '0')
+    return '0x' + clean
   }
 
   /**
@@ -190,6 +247,13 @@ class StarknetService {
    */
   getUSDCAddress(): string {
     return this.config.usdcTokenAddress;
+  }
+
+  /**
+   * Get STRK token address
+   */
+  getSTRKAddress(): string {
+    return this.config.strkTokenAddress;
   }
 
   /**

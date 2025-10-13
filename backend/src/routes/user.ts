@@ -6,6 +6,17 @@ import { validateNigerianAccountNumber } from '../utils/helpers';
 
 const router = Router();
 
+// Normalize a Starknet address to 0x + 64-lowercase-hex (66 chars total)
+function normalizeStarknetAddress(addr?: string): string | undefined {
+  if (!addr) return addr;
+  let hex = addr.toLowerCase();
+  if (hex.startsWith('0x')) hex = hex.slice(2);
+  hex = hex.replace(/[^0-9a-f]/g, '');
+  if (hex.length > 64) hex = hex.slice(-64);
+  if (hex.length < 64) hex = hex.padStart(64, '0');
+  return `0x${hex}`;
+}
+
 /**
  * GET /api/user/profile
  * Get authenticated user profile
@@ -25,7 +36,7 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
         id: freshUser._id,
         email: freshUser.email,
         name: freshUser.name,
-        chipiWalletAddress: freshUser.chipiWalletAddress,
+        chipiWalletAddress: normalizeStarknetAddress(freshUser.chipiWalletAddress),
         balanceUSD: freshUser.balanceUSD,
         balanceNGN: freshUser.balanceNGN,
         hasBankDetails: Boolean(
@@ -62,7 +73,7 @@ router.post('/wallet-sync', authenticateToken, async (req: Request, res: Respons
     const user = req.user;
     // Only update if wallet address is not already set
     if (!user.chipiWalletAddress) {
-      user.chipiWalletAddress = walletAddress;
+      user.chipiWalletAddress = normalizeStarknetAddress(walletAddress) as string;
       await user.save();
     }
 
@@ -73,7 +84,7 @@ router.post('/wallet-sync', authenticateToken, async (req: Request, res: Respons
         id: user._id,
         email: user.email,
         name: user.name,
-        chipiWalletAddress: user.chipiWalletAddress,
+        chipiWalletAddress: normalizeStarknetAddress(user.chipiWalletAddress),
         balanceUSD: user.balanceUSD,
         balanceNGN: user.balanceNGN,
         hasBankDetails: Boolean(

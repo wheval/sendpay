@@ -4,7 +4,6 @@ import { authenticateToken } from '../middleware/auth';
 import { exchangeRateService } from '../services/exchange-rate.service';
 import { coingeckoService } from '../services/coingecko.service';
 import { starknetService } from '../services/starknet.service';
-import { getTokenConfig } from '../lib/constants';
 
 const router = Router();
 
@@ -300,15 +299,12 @@ router.get('/summary', authenticateToken, async (req: Request, res: Response) =>
     try {
       const wallet = (req.user.chipiWalletAddress || '').toLowerCase()
       if (wallet) {
-        const usdc = getTokenConfig('USDC')
-        const strk = getTokenConfig('STRK')
-
         const [usdcBal, strkBal] = await Promise.all([
-          starknetService.getErc20Balance(wallet, usdc.address, usdc.decimals),
-          starknetService.getErc20Balance(wallet, strk.address, strk.decimals)
+          starknetService.getUSDCBalance(wallet),
+          starknetService.getSTRKBalance(wallet)
         ])
-        const usdcFormatted = Number(usdcBal.formatted || '0')
-        const strkFormatted = Number(strkBal.formatted || '0')
+        const usdcFormatted = Number(usdcBal || '0')
+        const strkFormatted = Number(strkBal || '0')
         usdcUsdValue = isNaN(usdcFormatted) ? 0 : usdcFormatted // 1 USDC = 1 USD
         totalStrkFormatted = isNaN(strkFormatted) ? 0 : strkFormatted
       }
