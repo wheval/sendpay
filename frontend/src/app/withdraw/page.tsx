@@ -159,7 +159,7 @@ export default function WithdrawPage() {
         return
       }
 
-      const response = await api.starknet.withdraw(formData, token)
+      const response = await api.withdrawal.signature(formData, token)
       setWithdrawalRequest(response.data)
     } catch (err: any) {
       console.error('Withdrawal failed:', err)
