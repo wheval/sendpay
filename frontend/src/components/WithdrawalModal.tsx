@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useTransfer, useCallAnyContract } from "@chipi-stack/nextjs";
+import { useTransfer, useCallAnyContract, useGetWallet } from "@chipi-stack/nextjs";
 import { api } from "@/lib/api";
 import { getTokenConfig } from "@/lib/constants";
 import { cookies } from "@/lib/cookies";
@@ -15,7 +15,7 @@ import { X } from "lucide-react";
 interface WithdrawalModalProps {
   open: boolean;
   onClose: () => void;
-  userWalletAddress: string;
+  userId: string;
   bankAccounts: Array<{
     _id: string;
     bankName: string;
@@ -24,7 +24,7 @@ interface WithdrawalModalProps {
   }>;
 }
 
-export function WithdrawalModal({ open, onClose, userWalletAddress, bankAccounts }: WithdrawalModalProps) {
+export function WithdrawalModal({ open, onClose, userId, bankAccounts }: WithdrawalModalProps) {
   const [amount, setAmount] = useState("");
   const [selectedBank, setSelectedBank] = useState("");
   const [pin, setPin] = useState("");
@@ -35,11 +35,12 @@ export function WithdrawalModal({ open, onClose, userWalletAddress, bankAccounts
 
   const { transferAsync } = useTransfer();
   const { callAnyContractAsync } = useCallAnyContract();
+  const { fetchWallet } = useGetWallet();
 
   if (!open) return null;
 
   const handleWithdrawal = async () => {
-    if (!amount || !selectedBank || !userWalletAddress || !pin) {
+    if (!amount || !selectedBank || !userId || !pin) {
       setError("Please fill in all fields");
       return;
     }
@@ -104,12 +105,25 @@ export function WithdrawalModal({ open, onClose, userWalletAddress, bankAccounts
         }
       ];
 
-      // Step 3: Execute multicall
+      // Step 3: Get wallet and execute multicall
       setStep("withdrawing");
+      
+      // Get full wallet object
+      const wallet = await fetchWallet({
+        params: {
+          externalUserId: userId
+        },
+        getBearerToken: () => Promise.resolve(token || "")
+      });
+      
+      if (!wallet) {
+        throw new Error("No wallet found for user. Please create a wallet first.");
+      }
+      
       const transactionHash = await callAnyContractAsync({
         params: {
           encryptKey: pin, // Use the PIN as encrypt key
-          wallet: { address: userWalletAddress }, // Wallet data
+          wallet: wallet, // Full wallet object with publicKey and encryptedPrivateKey
           contractAddress: sendPayContractAddress,
           calls: calls
         },

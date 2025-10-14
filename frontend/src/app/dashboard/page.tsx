@@ -684,7 +684,7 @@ export default function DashboardPage() {
                       <div className="text-2xl font-bold">
                         {showNGN
                           ? `₦${strkNgn.toLocaleString()}`
-                          : `${strkNum} STRK`}
+                          : `${strkNum.toFixed(2)} STRK`}
                       </div>
 
                       <p className="text-sm text-muted-foreground">
@@ -828,7 +828,7 @@ export default function DashboardPage() {
       <WithdrawalModal 
         open={showWithdrawalModal} 
         onClose={() => setShowWithdrawalModal(false)}
-        userWalletAddress={userData.chipiWalletAddress || ""}
+        userId={userData.id}
         bankAccounts={bankAccounts}
       />
       <FundCryptoModal
@@ -841,7 +841,7 @@ export default function DashboardPage() {
         onClose={() => setShowTransferModal(false)}
         usdcBalance={balance}
         strkBalance={strkBalance}
-        userWalletAddress={userData.chipiWalletAddress}
+        userId={userData.id}
       />
               </div>
   );

@@ -3,17 +3,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import CryptoJS from "crypto-js";
-import { Account, RpcProvider } from "starknet";
-import { cookies } from "@/lib/cookies";
-import { api } from "@/lib/api";
 
 interface EnterPinModalProps {
   open: boolean;
   onClose: () => void;
-  onPinVerified: (decryptedPrivateKey: string, account: Account) => void;
-  walletAddress: string;
-  encryptedPrivateKey: string;
+  onPinEntered: (pin: string) => void;
   title?: string;
   description?: string;
 }
@@ -21,13 +15,10 @@ interface EnterPinModalProps {
 export function EnterPinModal({ 
   open, 
   onClose, 
-  onPinVerified, 
-  walletAddress, 
-  encryptedPrivateKey,
+  onPinEntered,
   title = "Enter your PIN",
   description = "Please enter your PIN to authorize this transaction."
 }: EnterPinModalProps) {
-  const [isLoading, setIsLoading] = useState(false);
   const [digits, setDigits] = useState(["", "", "", ""]);
   const [error, setError] = useState("");
   const inputsRef = useRef<Array<HTMLInputElement | null>>([null, null, null, null]);
@@ -59,50 +50,15 @@ export function EnterPinModal({
   };
 
   const pin = digits.join("");
-  const disabled = isLoading || pin.length !== 4;
 
-  const handleVerifyPin = async () => {
+  const handleEnterPin = () => {
     if (pin.length !== 4) return;
 
-    try {
-      setIsLoading(true);
-      setError("");
-
-      // Decrypt private key with PIN
-      const decryptedPrivateKey = CryptoJS.AES.decrypt(encryptedPrivateKey, pin).toString(CryptoJS.enc.Utf8);
-      
-      if (!decryptedPrivateKey) {
-        setError("Invalid PIN. Please try again.");
-        setDigits(["", "", "", ""]);
-        setTimeout(() => inputsRef.current[0]?.focus(), 100);
-        return;
-      }
-
-      // Create account instance
-      const nodeUrl = process.env.NEXT_PUBLIC_STARKNET_NODE_URL || 'https://starknet-mainnet.public.blastapi.io/rpc/v0_7';
-      const provider = new RpcProvider({ nodeUrl });
-      const account = new Account(provider, walletAddress, decryptedPrivateKey);
-
-      // Verify the account is valid by checking if the address matches
-      if (account.address !== walletAddress) {
-        setError("Invalid wallet configuration. Please contact support.");
-        return;
-      }
-
-      // PIN verified successfully
-      onPinVerified(decryptedPrivateKey, account);
-      onClose();
-      setDigits(["", "", "", ""]);
-      setError("");
-
-    } catch (error) {
-      console.error('PIN verification failed:', error);
-      setError("Invalid PIN. Please try again.");
-      setDigits(["", "", "", ""]);
-      setTimeout(() => inputsRef.current[0]?.focus(), 100);
-    } finally {
-      setIsLoading(false);
-    }
+    // Simply return the PIN to the parent component
+    onPinEntered(pin);
+    onClose();
+    setDigits(["", "", "", ""]);
+    setError("");
   };
 
   if (!open) return null;
@@ -140,10 +96,10 @@ export function EnterPinModal({
 
           <Button
             className="w-full"
-            disabled={disabled}
-            onClick={handleVerifyPin}
+            disabled={pin.length !== 4}
+            onClick={handleEnterPin}
           >
-            {isLoading ? "Verifying..." : "Verify PIN"}
+            Enter PIN
           </Button>
         </div>
       </div>

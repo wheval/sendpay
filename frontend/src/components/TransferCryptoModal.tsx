@@ -6,24 +6,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getTokenConfig } from "@/lib/constants";
-import { useCallAnyContract } from "@chipi-stack/nextjs";
 import { X } from "lucide-react";
+import { cookies } from "@/lib/cookies";
+import { EnterPinModal } from "./EnterPinModal";
 
 interface TransferCryptoModalProps {
   open: boolean;
   onClose: () => void;
   usdcBalance?: string | null;
   strkBalance?: string | null;
-  userWalletAddress?: string;
+  userId?: string;
 }
 
-export function TransferCryptoModal({ open, onClose, usdcBalance, strkBalance, userWalletAddress }: TransferCryptoModalProps) {
+export function TransferCryptoModal({ open, onClose, usdcBalance, strkBalance, userId }: TransferCryptoModalProps) {
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [selectedToken, setSelectedToken] = useState<"USDC" | "STRK">("USDC");
   const [isLoading, setIsLoading] = useState(false);
-  const { callAnyContractAsync } = useCallAnyContract();
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
   if (!open) return null;
 
   // Get current balance for selected token
@@ -32,31 +34,102 @@ export function TransferCryptoModal({ open, onClose, usdcBalance, strkBalance, u
   const amountNumber = Number(amount || "0");
   const hasInsufficientBalance = amountNumber > balanceNumber;
 
-  const onTransfer = async () => {
+  const onTransfer = () => {
     if (!recipient || !amount || hasInsufficientBalance) return;
+    
+    // Validate recipient address (basic Starknet address validation)
+    if (!recipient.startsWith("0x") || recipient.length !== 66) {
+      setError("Invalid recipient address. Please enter a valid Starknet address.");
+      return;
+    }
+
+    setError(null);
+    setShowPinModal(true);
+  };
+
+  const executeTransfer = async (pin: string) => {
+    setShowPinModal(false);
     setIsLoading(true);
+    
     try {
-      const tokenConfig = getTokenConfig(selectedToken) as { address: string; decimals: string };
-      // Convert amount to token decimals
-      const amountWithDecimals = (parseFloat(amount) * Math.pow(10, parseInt(tokenConfig.decimals))).toString();
-      
-      await callAnyContractAsync({
-        params: {
-          encryptKey: "", // handled by Chipi SDK if needed
-          wallet: { address: userWalletAddress || "" },
-          contractAddress: tokenConfig.address,
-          calls: [
-            {
-              contractAddress: tokenConfig.address,
-              entrypoint: "transfer",
-              calldata: [recipient, amountWithDecimals, "0"],
-            },
-          ],
-        },
-        bearerToken: "",
+      // Get authentication token
+      const token = cookies.get("jwt");
+      if (!token) {
+        throw new Error("Authentication required. Please log in again.");
+      }
+
+      if (!userId) {
+        throw new Error("User ID is required for wallet access.");
+      }
+
+      console.log("Transfer details:", {
+        token: selectedToken,
+        recipient,
+        amount,
+        userId,
+        jwtTokenLength: token?.length,
+        jwtTokenPreview: token ? `${token.substring(0, 20)}...` : 'No token'
       });
-      onClose();
-    } catch {
+
+      // Get wallet using API route
+      const walletRes = await fetch("/api/chipi/wallet", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      const walletData = await walletRes.json();
+
+      if (!walletRes.ok || !walletData.success) {
+        throw new Error(walletData.message || "Failed to fetch wallet");
+      }
+
+      const wallet = walletData.data;
+
+      if (!wallet) {
+        throw new Error("No wallet found for user. Please create a wallet first.");
+      }
+
+      console.log("Wallet data:", wallet);
+
+      // Execute transfer using API route
+      const transferRes = await fetch("/api/chipi/transfer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          pin,
+          wallet,
+          recipient,
+          amount,
+          token: selectedToken
+        }),
+      });
+
+      const transferData = await transferRes.json();
+
+      if (!transferRes.ok || !transferData.success) {
+        throw new Error(transferData.message || "Transfer failed");
+      }
+
+      const result = transferData.data;
+      console.log("Transfer result:", result);
+      
+      setSuccess(true);
+      setTimeout(() => {
+        onClose();
+        setSuccess(false);
+      }, 2000);
+      
+    } catch (error: unknown) {
+      console.error("Transfer error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Transfer failed. Please try again.";
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -115,10 +188,33 @@ export function TransferCryptoModal({ open, onClose, usdcBalance, strkBalance, u
             className="w-full" 
             onClick={onTransfer}
           >
-            {isLoading ? "Transferring..." : `Transfer ${selectedToken}`}
+            {isLoading ? "Transferring..." : success ? "Transfer Successful!" : `Transfer ${selectedToken}`}
           </Button>
+          
+          {/* Error Message */}
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+          
+          {/* Success Message */}
+          {success && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+              <p className="text-sm text-green-600">Transfer initiated successfully! Check your wallet for confirmation.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
+      
+      {/* PIN Modal */}
+      <EnterPinModal
+        open={showPinModal}
+        onClose={() => setShowPinModal(false)}
+        onPinEntered={(pin) => executeTransfer(pin)}
+        title="Enter PIN to Transfer"
+        description={`Enter your PIN to transfer ${amount} ${selectedToken} to ${recipient.slice(0, 10)}...`}
+      />
     </div>
   );
 }
