@@ -4,32 +4,26 @@
 	"description": "SendPay Backend API for Starknet integration",
 	"main": "dist/index.js",
 	"scripts": {
-	    "build": "tsc -p tsconfig.json && tsc -p tsconfig.server.json && apibara build --dir .",
-	    "build:api": "tsc -p tsconfig.json",
-	    "build:indexer": "apibara build --dir .",
-	    "monitor:indexer": "node scripts/uptime-monitor.js",
-	    
-	    "start:indexer:server:sepolia": "dotenv -e .env.sepolia -- node dist/server.js",
-	    "start:indexer:server:mainnet": "dotenv -e .env.mainnet -- node dist/server.js",
-    
-	    "dev:api": "dotenv -e .env -- nodemon src/index.ts",
-	    "dev:api:sepolia": "dotenv -e .env.sepolia -- nodemon src/index.ts",
-	    "dev:api:mainnet": "dotenv -e .env.mainnet -- nodemon src/index.ts",
-    
-	    "start:api": "node dist/index.js",
-	    "start:api:sepolia": "dotenv -e .env.sepolia -- node dist/index.js",
-	    "start:api:mainnet": "dotenv -e .env.mainnet -- node dist/index.js",
-    
-	    "start:indexer": "dotenv -e .env -- apibara start --dir . --indexer sendpay",
-	    "start:indexer:sepolia": "dotenv -e .env.sepolia -- apibara start --dir . --indexer sendpay --preset sepolia",
-	    "start:indexer:mainnet": "dotenv -e .env.mainnet -- apibara start --dir . --indexer sendpay --preset mainnet",
-    
-	    "dev:indexer": "dotenv -e .env -- apibara dev --dir . --indexers sendpay",
-	    "dev:indexer:sepolia": "dotenv -e .env.sepolia -- apibara dev --dir . --indexers sendpay --preset sepolia",
-	    "dev:indexer:mainnet": "dotenv -e .env.mainnet -- apibara dev --dir . --indexers sendpay --preset mainnet",
-    
-	    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.indexers.json",
-	    "prepare": "apibara prepare"
+		"build": "tsc -p tsconfig.json && tsc -p tsconfig.server.json && apibara build --dir .",
+		"build:api": "tsc -p tsconfig.json",
+		"build:indexer": "apibara build --dir .",
+		"monitor:indexer": "node scripts/uptime-monitor.js",
+		"start:indexer:server:sepolia": "dotenv -e .env.sepolia -- node dist/server.js",
+		"start:indexer:server:mainnet": "dotenv -e .env.mainnet -- node dist/server.js",
+		"dev:api": "dotenv -e .env -- nodemon src/index.ts",
+		"dev:api:sepolia": "dotenv -e .env.sepolia -- nodemon src/index.ts",
+		"dev:api:mainnet": "dotenv -e .env.mainnet -- nodemon src/index.ts",
+		"start:api": "node dist/index.js",
+		"start:api:sepolia": "dotenv -e .env.sepolia -- node dist/index.js",
+		"start:api:mainnet": "dotenv -e .env.mainnet -- node dist/index.js",
+		"start:indexer": "dotenv -e .env -- apibara start --dir . --indexer sendpay",
+		"start:indexer:sepolia": "dotenv -e .env.sepolia -- apibara start --dir . --indexer sendpay --preset sepolia",
+		"start:indexer:mainnet": "dotenv -e .env.mainnet -- apibara start --dir . --indexer sendpay --preset mainnet",
+		"dev:indexer": "dotenv -e .env -- apibara dev --dir . --indexers sendpay",
+		"dev:indexer:sepolia": "dotenv -e .env.sepolia -- apibara dev --dir . --indexers sendpay --preset sepolia",
+		"dev:indexer:mainnet": "dotenv -e .env.mainnet -- apibara dev --dir . --indexers sendpay --preset mainnet",
+		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.indexers.json",
+		"prepare": "apibara prepare"
 	},
 	"keywords": [
 		"starknet",
@@ -44,6 +38,11 @@
 		"@apibara/protocol": "next",
 		"@apibara/starknet": "next",
 		"@types/bcrypt": "^6.0.0",
+		"@types/cors": "^2.8.19",
+		"@types/elliptic": "^6.4.18",
+		"@types/express": "^4.17.23",
+		"@types/jsonwebtoken": "^9.0.10",
+		"@types/node": "^20.10.5",
 		"apibara": "next",
 		"axios": "^1.6.2",
 		"bcrypt": "^6.0.0",
@@ -55,17 +54,12 @@
 		"jsonwebtoken": "^9.0.2",
 		"mongoose": "^8.0.3",
 		"starknet": "^7.6.4",
+		"typescript": "^5.3.3",
 		"zod": "^3.23.8"
 	},
 	"devDependencies": {
-		"@types/cors": "^2.8.17",
-		"@types/elliptic": "^6.4.18",
-		"@types/express": "^4.17.21",
-		"@types/jsonwebtoken": "^9.0.10",
-		"@types/node": "^20.10.5",
 		"dotenv-cli": "^7.3.0",
 		"nodemon": "^3.0.2",
-		"ts-node": "^10.9.2",
-		"typescript": "^5.3.3"
+		"ts-node": "^10.9.2"
 	}
 }
