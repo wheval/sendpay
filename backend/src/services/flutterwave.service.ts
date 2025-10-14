@@ -327,55 +327,149 @@ export class FlutterwaveService {
     }
   }
 
-
   /**
-   * Create hosted payment link for on-ramp
+   * V4: Create order for bank transfer payment (on-ramp)
    */
-  async createHostedPayment(paymentData: {
+  async createOrder(orderData: {
     amount: number;
     currency: string;
+    customer: { email: string; name: string; phone?: string };
     tx_ref: string;
-    customer: {
-      email: string;
-      name: string;
-    };
-    customizations: {
-      title: string;
-      description: string;
-    };
-  }): Promise<string> {
-    try {
-      if (!this.clientId || !this.clientSecret) {
-        throw new Error('Flutterwave credentials not configured. Set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET environment variables.');
-      }
+    redirect_url: string;
+    description?: string;
+  }): Promise<any> {
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured.');
+    }
 
+    console.log('[fw] Creating order for bank transfer:', {
+      amount: orderData.amount,
+      tx_ref: orderData.tx_ref
+    });
+
+    try {
       const response = await axios.post(
-        'https://api.flutterwave.com/v3/payments',
+        `${this.baseUrl}/orders`,
         {
-          tx_ref: paymentData.tx_ref,
-          amount: paymentData.amount,
-          currency: paymentData.currency,
-          redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success`,
-          customer: paymentData.customer,
-          customizations: paymentData.customizations,
-          payment_plan: null
+          amount: orderData.amount,
+          currency: orderData.currency,
+          customer: orderData.customer,
+          tx_ref: orderData.tx_ref,
+          redirect_url: orderData.redirect_url,
+          description: orderData.description || 'SendPay On-Ramp Deposit',
+          meta: { source: 'sendpay-onramp', payment_type: 'account' } // Specify bank transfer
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.clientSecret}`,
-            'Content-Type': 'application/json'
+            ...(await this.getAuthHeader()),
+            'Content-Type': 'application/json',
+            'X-Trace-Id': `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
           }
         }
       );
 
-      if (response.data.status === 'success') {
-        return response.data.data.link;
-      } else {
-        throw new Error(`Flutterwave API error: ${response.data.message}`);
-      }
+      console.log('[fw] Order created:', response.data);
+      return response.data;
     } catch (error: any) {
-      console.error('Flutterwave hosted payment error:', error.response?.data || error.message);
-      throw new Error(`Failed to create hosted payment: ${error.message}`);
+      console.error('[fw] Order creation error:', error.response?.data || error.message);
+      throw new Error(`Failed to create order: ${error.message}`);
+    }
+  }
+
+  /**
+   * V4: Process bank transfer payment
+   */
+  async processBankTransferPayment(orderId: string): Promise<any> {
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured.');
+    }
+
+    console.log('[fw] Processing bank transfer for order:', { orderId });
+
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/payments/account`,
+        {
+          order_id: orderId
+        },
+        {
+          headers: {
+            ...(await this.getAuthHeader()),
+            'Content-Type': 'application/json',
+            'X-Trace-Id': `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+          }
+        }
+      );
+
+      console.log('[fw] Bank transfer payment response:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('[fw] Bank transfer payment error:', error.response?.data || error.message);
+      throw new Error(`Failed to process bank transfer: ${error.message}`);
+    }
+  }
+
+  /**
+   * V4: Check payment status
+   */
+  async getPaymentStatus(transactionId: string): Promise<any> {
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured.');
+    }
+
+    console.log('[fw] Checking payment status:', { transactionId });
+
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/payments/${transactionId}`,
+        {
+          headers: {
+            ...(await this.getAuthHeader()),
+            'Content-Type': 'application/json',
+            'X-Trace-Id': `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+          }
+        }
+      );
+
+      console.log('[fw] Payment status response:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('[fw] Payment status error:', error.response?.data || error.message);
+      throw new Error(`Failed to check payment status: ${error.message}`);
+    }
+  }
+
+  /**
+   * List available payment methods (optional for validation)
+   */
+  async listPaymentMethods(params: { page?: number; size?: number } = {}): Promise<any> {
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured.');
+    }
+
+    console.log('[fw] Fetching payment methods:', { page: params.page || 1, size: params.size || 10 });
+
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/payment-methods`,
+        {
+          headers: {
+            ...(await this.getAuthHeader()),
+            'Content-Type': 'application/json',
+            'X-Trace-Id': `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+          },
+          params: {
+            page: params.page || 1,
+            size: params.size || 10
+          }
+        }
+      );
+
+      console.log('[fw] Payment methods response:', { count: response.data.data?.length || 0 });
+      return response.data;
+    } catch (error: any) {
+      console.error('[fw] Payment methods fetch error:', error.response?.data || error.message);
+      throw new Error(`Failed to fetch payment methods: ${error.message}`);
     }
   }
 

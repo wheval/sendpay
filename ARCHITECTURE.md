@@ -2,7 +2,7 @@
 
 ## 🏗️ System Overview
 
-SendPay is a **Starknet-based onramp/offramp platform** that facilitates seamless conversion between USDC/STRK and Nigerian Naira (NGN) through bank transfers. The platform uses a modern microservices architecture with clear separation of concerns.
+SendPay is a **Starknet-based onramp/offramp platform** that facilitates seamless conversion between USDC/STRK and Nigerian Naira (NGN) through bank transfers. The platform uses a modern microservices architecture with ChipiPay SDK integration for wallet management and Flutterwave V4 API for fiat processing.
 
 ## 🎯 Architecture Principles
 
@@ -48,7 +48,7 @@ SendPay is a **Starknet-based onramp/offramp platform** that facilitates seamles
 ┌─────────────────────────────────────────────────────────────────┐
 │                       INTEGRATION LAYER                        │
 ├─────────────────────────────────────────────────────────────────┤
-│  Flutterwave API │  ChipiPay SDK  │  Starknet RPC  │  Apibara  │
+│  Flutterwave V4 │  ChipiPay SDK  │  Starknet RPC  │  Apibara  │
 └─────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -62,7 +62,7 @@ SendPay is a **Starknet-based onramp/offramp platform** that facilitates seamles
 ┌─────────────────────────────────────────────────────────────────┐
 │                       BLOCKCHAIN LAYER                         │
 ├─────────────────────────────────────────────────────────────────┤
-│        Starknet Network (Sepolia/Mainnet)                      │
+│        Starknet Network (Mainnet)                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
 │  │  SendPay Contract│  │  USDC Token     │  │  STRK Token     │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
@@ -137,12 +137,14 @@ backend/src/
 │   ├── payment.ts        # Payment processing
 │   ├── withdrawal.ts     # Withdrawal handling
 │   ├── starknet.ts       # Blockchain operations
-│   └── flutterwave.ts    # Payment gateway
+│   ├── flutterwave.ts   # Payment gateway
+│   └── chipipay.ts       # ChipiPay integration
 ├── services/             # Business logic
 │   ├── auth.service.ts   # Authentication logic
 │   ├── payment.service.ts # Payment processing
 │   ├── starknet.service.ts # Blockchain integration
 │   ├── flutterwave.service.ts # Payment gateway
+│   ├── chipipay.service.ts # ChipiPay integration
 │   └── exchange-rate.service.ts # Currency conversion
 ├── types/                # TypeScript interfaces
 ├── utils/                # Utility functions
@@ -191,7 +193,7 @@ contract/src/lib.cairo
 ```
 1. User initiates bank transfer to SendPay account
    ↓
-2. Flutterwave webhook notifies backend of incoming payment
+2. Flutterwave V4 webhook notifies backend of incoming payment
    ↓
 3. Backend verifies payment and creates deposit record
    ↓
@@ -223,7 +225,7 @@ contract/src/lib.cairo
    ↓
 3. Payment link shared with payer
    ↓
-4. Payer processes payment through platform
+4. Payer processes payment through Flutterwave V4
    ↓
 5. Backend updates transaction status and notifies recipient
 ```
@@ -239,7 +241,7 @@ contract/src/lib.cairo
          │                       │                       │
          ▼                       ▼                       ▼
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Password Hash  │    │  HTTP-Only      │    │  Role-Based     │
+│  Password Hash   │   │  HTTP-Only      │    │ Role-Based     │
 │  (bcrypt)       │    │  Cookies        │    │  Access Control │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```

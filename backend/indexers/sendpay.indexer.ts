@@ -285,18 +285,33 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
           // Use already parsed data from eventData
           const { withdrawalId, user, amount, tokenAddress, txRef } = eventData;
 
+          useLogger().info(`[sendpay.indexer] Processing WithdrawalCreated event:`, {
+            withdrawalId,
+            user,
+            amount,
+            tokenAddress,
+            txRef,
+            txHash
+          });
+
           // Find the pending transaction created by our backend signature step using tx_ref
           const pendingTx = await Transaction.findOne({
             "metadata.txRef": txRef,
           });
+          
           if (pendingTx) {
+            useLogger().info(`[sendpay.indexer] Found pending transaction for txRef: ${txRef}`, {
+              transactionId: pendingTx._id,
+              currentStatus: pendingTx.status,
+              bankAccountId: (pendingTx.metadata as any)?.bankAccountId
+            });
             // Save linkage and mark as payout pending
             pendingTx.status = "payout_pending";
             pendingTx.metadata = {
               ...pendingTx.metadata,
               withdrawalId: withdrawalId,
               user,
-              amount: amount,
+              amountInDecimal: amount,
               tokenAddress,
               onchainTxHash: txHash,
             } as any;
@@ -305,74 +320,150 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             try {
               // Load bank details from stored bankAccountId (server-side PII only)
               const bankAccountId = (pendingTx.metadata as any)?.bankAccountId;
-              if (bankAccountId) {
-                const bank = await BankAccount.findById(bankAccountId);
-                if (bank) {
-                  // Convert amount (USDC with 6 decimals) using locked FX if available
-                  const usdAmount = Number(amount) / 1e6;
-                  const lockedRate = (pendingTx.metadata as any)?.lockedExchangeRate;
-                  const ngnAmount = typeof lockedRate === 'number' && lockedRate > 0
-                    ? Math.round(usdAmount * lockedRate)
-                    : await exchangeRateService.convertUSDToNGN(usdAmount);
-                  const reference = `sendpay_${withdrawalId}`;
-
-                  const transfer =
-                    await flutterwaveService.createDirectTransfer({
-                      bankCode: bank.bankCode,
-                      accountNumber: bank.accountNumber,
-                      amountNGN: ngnAmount,
-                      reference,
-                      narration: `SendPay withdrawal ${reference}`,
-                      callback_url:
-                        process.env.FLUTTERWAVE_CALLBACK_URL || undefined,
-                      idempotencyKey: reference,
-                    });
-
-                  await Transaction.findByIdAndUpdate(pendingTx._id, {
-                    $set: {
-                      status: "payout_pending",
-                      metadata: {
-                        ...(pendingTx.metadata as any),
-                        flutterwave_reference:
-                          transfer?.data?.reference || reference,
-                        flutterwave_transfer_id: transfer?.data?.id || null,
-                      },
-                    },
-                  });
-                }
+              
+              // Validate bankAccountId exists
+              if (!bankAccountId) {
+                useLogger().error('[sendpay.indexer] Missing bankAccountId for txRef:', txRef);
+                return;
               }
+
+              const bank = await BankAccount.findById(bankAccountId);
+              if (!bank) {
+                useLogger().error('[sendpay.indexer] Bank account not found for ID:', bankAccountId);
+                return;
+              }
+
+              // Convert amount (USDC with 6 decimals) using locked FX if available
+              const usdAmount = Number(amount) / 1e6;
+              const lockedRate = (pendingTx.metadata as any)?.lockedExchangeRate;
+              const ngnAmount = typeof lockedRate === 'number' && lockedRate > 0
+                ? Math.round(usdAmount * lockedRate)
+                : await exchangeRateService.convertUSDToNGN(usdAmount);
+
+              // Ensure NGN amount meets Flutterwave minimum
+              if (ngnAmount < 100) {
+                useLogger().error(`[sendpay.indexer] NGN amount ${ngnAmount} below Flutterwave minimum of ₦100`);
+                // Mark transaction as failed due to amount too low
+                await Transaction.findByIdAndUpdate(pendingTx._id, {
+                  $set: {
+                    status: "payout_failed",
+                    metadata: {
+                      ...(pendingTx.metadata as any),
+                      error: "Amount below Flutterwave minimum (₦100)",
+                      ngnAmount,
+                      usdAmount,
+                    },
+                  },
+                });
+                return;
+              }
+
+              const reference = `sendpay_${withdrawalId}`;
+
+              const transfer =
+                await flutterwaveService.createDirectTransfer({
+                  bankCode: bank.bankCode,
+                  accountNumber: bank.accountNumber,
+                  amountNGN: ngnAmount,
+                  reference,
+                  narration: `SendPay withdrawal ${reference}`,
+                  callback_url:
+                    process.env.FLUTTERWAVE_CALLBACK_URL || undefined,
+                  idempotencyKey: reference,
+                });
+
+              await Transaction.findByIdAndUpdate(pendingTx._id, {
+                $set: {
+                  status: "payout_pending",
+                  metadata: {
+                    ...(pendingTx.metadata as any),
+                    flutterwave_reference:
+                      transfer?.data?.reference || reference,
+                    flutterwave_transfer_id: transfer?.data?.id || null,
+                    ngnAmount,
+                    usdAmount,
+                    payoutInitiatedAt: new Date(),
+                  },
+                },
+              });
+
+              useLogger().info(`[sendpay.indexer] Payout initiated for withdrawal ${withdrawalId}: ₦${ngnAmount}`);
             } catch (err) {
               useLogger().error(
                 "[sendpay.indexer] Payout initiation failed",
                 err
               );
+              
+              // Mark transaction as failed if payout initiation fails
+              await Transaction.findByIdAndUpdate(pendingTx._id, {
+                $set: {
+                  status: "payout_failed",
+                  metadata: {
+                    ...(pendingTx.metadata as any),
+                    error: "Payout initiation failed",
+                    errorDetails: err instanceof Error ? err.message : String(err),
+                    payoutFailedAt: new Date(),
+                  },
+                },
+              });
             }
+          } else {
+            useLogger().error(`[sendpay.indexer] No pending transaction found for txRef: ${txRef}`, {
+              withdrawalId,
+              user,
+              amount,
+              tokenAddress,
+              txRef,
+              txHash
+            });
           }
         } else if (selector === EVENT_SELECTORS.WithdrawalCompleted) {
           const { withdrawalId } = eventData;
+          
+          // Mark as onchain_completed - contract has confirmed the withdrawal
           await Transaction.updateMany(
-            { "metadata.withdrawalId": withdrawalId },
+            { 
+              "metadata.withdrawalId": withdrawalId,
+              // Only update if payout was completed (webhook should have run first)
+              status: "payout_completed"
+            },
             {
               $set: {
-                status: "payout_completed",
+                status: "onchain_completed",
                 metadata: {
                   updatedAt: new Date(),
                   event: "WithdrawalCompleted",
+                  onchainCompletedBy: "indexer",
+                  onchainCompletedAt: new Date(),
                 },
               },
             }
           );
+          
+          useLogger().info(`[sendpay.indexer] WithdrawalCompleted event processed for withdrawal ${withdrawalId} - marked as onchain_completed`);
         } else if (selector === EVENT_SELECTORS.WithdrawalFailed) {
           const { withdrawalId } = eventData;
+          
+          // Update transactions but avoid race conditions with webhook
           await Transaction.updateMany(
-            { "metadata.withdrawalId": withdrawalId },
+            { 
+              "metadata.withdrawalId": withdrawalId,
+              // Only update if not already failed by webhook
+              status: { $nin: ["payout_failed", "payout_completed"] }
+            },
             {
               $set: {
                 status: "payout_failed",
-                metadata: { updatedAt: new Date(), event: "WithdrawalFailed" },
+                metadata: { 
+                  updatedAt: new Date(), 
+                  event: "WithdrawalFailed",
+                  failedBy: "indexer",
+                },
               },
             }
           );
+          
+          useLogger().info(`[sendpay.indexer] WithdrawalFailed event processed for withdrawal ${withdrawalId}`);
         } else if (selector === EVENT_SELECTORS.DepositCompleted) {
           // Handle on-ramp completion
           const { user, amount, tokenAddress, fiatTxRef } = eventData;

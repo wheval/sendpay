@@ -19,14 +19,15 @@ import { flutterwaveRoutes } from './routes/flutterwave';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS configuration
+// CORS configuration for regular API routes
 const corsOptions = {
   origin: [
     'http://localhost:3000',           // Frontend dev server
     'http://localhost:3001',
     'http://localhost:3002', 
     'https://sendpay-five.vercel.app', // Vercel frontend
-    'https://sendpay.vercel.app'       // Vercel frontend
+    'https://sendpay.vercel.app',      // Vercel frontend
+    'https://sendpay-vercel.vercel.app' // Vercel frontend
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -35,8 +36,30 @@ const corsOptions = {
   optionsSuccessStatus: 204
 };
 
-// Apply CORS middleware
-app.use(cors(corsOptions));
+// Apply CORS middleware to all routes except webhooks
+app.use((req, res, next) => {
+  // Skip CORS for webhook routes - they'll be handled separately
+  if (req.path.startsWith('/api/flutterwave/webhook')) {
+    return next();
+  }
+  cors(corsOptions)(req, res, next);
+});
+
+// Disable CORS entirely for webhook endpoint (most secure for webhooks)
+app.use('/api/flutterwave/webhook', (req, res, next) => {
+  // Set headers to disable CORS for this specific route
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, verif-hash');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  
+  next();
+});
 
 // Debug middleware to log CORS issues
 app.use((req, res, next) => {
@@ -98,7 +121,7 @@ app.listen(PORT, () => {
   console.log(`🚀 SendPay Backend API running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-  console.log(`🌐 CORS enabled for: ${corsOptions.origin.join(', ')}`);
+  console.log(`🌐 CORS enabled for: Frontend domains only (webhooks bypassed)`);
 });
 
 export default app;

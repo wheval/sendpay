@@ -75,7 +75,7 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
     const total = await Transaction.countDocuments(query);
 
     // Get current exchange rate for summary
-    const exchangeRate = await exchangeRateService.getUSDToNGNRate();
+    const exchangeRate = Math.round(await exchangeRateService.getUSDToNGNRate());
 
     // Calculate summary statistics
     const summary = {
@@ -98,7 +98,7 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
       }
 
       const isPending = ['credit_pending', 'payout_pending', 'created', 'signed', 'submitted_onchain', 'event_emitted'].includes(tx.status as any);
-      const isCompleted = ['credited', 'payout_completed'].includes(tx.status as any);
+      const isCompleted = ['credited', 'payout_completed', 'onchain_completed'].includes(tx.status as any);
       const isFailed = ['credit_failed', 'payout_failed'].includes(tx.status as any);
       if (isPending) summary.pendingTransactions++;
       else if (isCompleted) summary.completedTransactions++;
@@ -296,7 +296,7 @@ router.get('/summary', authenticateToken, async (req: Request, res: Response) =>
       }
 
       const isPending = ['credit_pending', 'payout_pending', 'created', 'signed', 'submitted_onchain', 'event_emitted'].includes(tx.status as any);
-      const isCompleted = ['credited', 'payout_completed'].includes(tx.status as any);
+      const isCompleted = ['credited', 'payout_completed', 'onchain_completed'].includes(tx.status as any);
       const isFailed = ['credit_failed', 'payout_failed'].includes(tx.status as any);
       if (isPending) stats.pendingCount++;
       else if (isCompleted) stats.completedCount++;
@@ -310,7 +310,7 @@ router.get('/summary', authenticateToken, async (req: Request, res: Response) =>
     }
 
     // Prices and FX via RPC balances + CoinGecko
-    const exchangeRate = await exchangeRateService.getUSDToNGNRate();
+    const exchangeRate = Math.round(await exchangeRateService.getUSDToNGNRate());
     let strkUsdPrice = 0
     let usdcUsdValue = 0
     let strkUsdValue = 0

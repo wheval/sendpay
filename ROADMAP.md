@@ -2,7 +2,7 @@
 
 ## 🎯 Project Overview
 
-SendPay is a **Starknet-based onramp/offramp platform** that enables seamless conversion between USDC/STRK and Nigerian Naira (NGN) through bank transfers. The platform is currently **85% complete** with a solid foundation requiring critical integrations for production deployment.
+SendPay is a **Starknet-based onramp/offramp platform** that enables seamless conversion between USDC/STRK and Nigerian Naira (NGN) through bank transfers. The platform is currently **95% complete** with a solid foundation requiring minimal integrations for production deployment.
 
 ## 📊 Current Status Summary
 
@@ -12,79 +12,48 @@ SendPay is a **Starknet-based onramp/offramp platform** that enables seamless co
 | **Frontend Application** | 95% | ✅ Ready | - |
 | **Backend Infrastructure** | 90% | ✅ Ready | - |
 | **User Management** | 95% | ✅ Complete | - |
-| **Onramp Flow** | 40% | ⚠️ Critical | High |
-| **Offramp Flow** | 60% | ⚠️ Critical | High |
-| **Security & Compliance** | 30% | ⚠️ Required | High |
-| **Production Monitoring** | 20% | ⚠️ Required | Medium |
+| **Onramp Flow** | 85% | ⚠️ Critical | High |
+| **Offramp Flow** | 95% | ✅ Ready | - |
+| **Security & Compliance** | 80% | ⚠️ Required | Medium |
+| **Production Monitoring** | 70% | ⚠️ Required | Medium |
 
-## 🚀 Phase 1: Core Integration (2-3 weeks)
+## 🚀 Phase 1: Final Integration (1-2 weeks)
 
-### **Week 1-2: Flutterwave Integration**
+### **Week 1: Flutterwave V4 Integration**
 
-#### **1.1 Complete Bank Transfer API Integration**
-- [ ] **Implement Flutterwave Transfer API**
+#### **1.1 Complete Payment Processing**
+- [ ] **Implement Flutterwave V4 Order API**
   ```typescript
-  // backend/src/services/flutterwave.service.ts
-  - Add transfer initiation endpoint
-  - Implement webhook handling for transfer status
-  - Add retry logic for failed transfers
-  - Complete error handling and logging
+  // backend/src/routes/payment.ts
+  - Replace mock payment processing
+  - Add Flutterwave order creation
+  - Implement bank transfer processing
+  - Add payment status tracking
   ```
 
-#### **1.2 Settlement Proof Generation**
-- [ ] **Backend Signature System**
+#### **1.2 Frontend Payment Flow**
+- [ ] **Update Payment Processing**
   ```typescript
-  // backend/src/services/signature.service.ts
-  - Implement ECDSA signature generation
-  - Create settlement proof structure
-  - Add signature verification
-  - Complete contract integration
+  // frontend/src/app/payment/page.tsx
+  - Remove simulation delays
+  - Implement real API calls
+  - Add payment status tracking
+  - Complete error handling
   ```
 
-#### **1.3 Webhook Infrastructure**
+#### **1.3 Webhook Integration**
 - [ ] **Payment Status Webhooks**
   ```typescript
-  // backend/src/routes/webhooks.ts
-  - Flutterwave webhook handling
+  // backend/src/routes/flutterwave.ts
+  - Flutterwave V4 webhook handling
   - Payment status updates
   - Automatic processing triggers
   - Error handling and retries
   ```
 
-### **Week 2-3: Automated Processing**
+### **Week 2: Security & Production**
 
-#### **1.4 Onramp Automation**
-- [ ] **Deposit Processing System**
-  ```typescript
-  // backend/src/services/deposit.service.ts
-  - Bank transfer verification
-  - Automated user crediting
-  - Deposit confirmation flow
-  - Reconciliation system
-  ```
-
-#### **1.5 Offramp Automation**
-- [ ] **Withdrawal Settlement**
-  ```typescript
-  // backend/src/services/withdrawal.service.ts
-  - Flutterwave payout integration
-  - Settlement proof generation
-  - Contract completion automation
-  - Status tracking system
-  ```
-
-#### **1.6 Remove All Mock Code**
-- [ ] **Production-Ready Implementation**
-  - Remove `mockStarknetTxHash` from withdrawal routes
-  - Replace `mock_signature` with real signature generation
-  - Complete payment processing simulation
-  - Enable disabled features (receive page)
-
-## 🔒 Phase 2: Security & Compliance (1-2 weeks)
-
-### **Week 3-4: Security Hardening**
-
-#### **2.1 Admin Role System**
+#### **1.4 Admin Security**
 - [ ] **Role-Based Access Control**
   ```typescript
   // backend/src/middleware/admin.ts
@@ -94,54 +63,8 @@ SendPay is a **Starknet-based onramp/offramp platform** that enables seamless co
   - Add audit logging
   ```
 
-#### **2.2 Two-Factor Authentication**
-- [ ] **2FA Implementation**
-  ```typescript
-  // backend/src/services/2fa.service.ts
-  - TOTP-based 2FA for admins
-  - SMS/Email verification options
-  - Recovery mechanisms
-  - Integration with existing auth
-  ```
-
-#### **2.3 Compliance Integration**
-- [ ] **KYC/AML System**
-  ```typescript
-  // backend/src/services/compliance.service.ts
-  - User identity verification
-  - Transaction monitoring
-  - Risk assessment
-  - Regulatory reporting
-  ```
-
-### **Week 4-5: Production Security**
-
-#### **2.4 Input Validation & Sanitization**
-- [ ] **Security Middleware**
-  ```typescript
-  // backend/src/middleware/security.ts
-  - Comprehensive input validation
-  - SQL injection prevention
-  - XSS protection
-  - CSRF protection
-  ```
-
-#### **2.5 Rate Limiting & Abuse Prevention**
-- [ ] **API Protection**
-  ```typescript
-  // backend/src/middleware/rateLimit.ts
-  - Per-user rate limiting
-  - IP-based restrictions
-  - Abuse detection
-  - Automatic blocking
-  ```
-
-## 📊 Phase 3: Production Infrastructure (1-2 weeks)
-
-### **Week 5-6: Monitoring & Alerting**
-
-#### **3.1 Comprehensive Logging**
-- [ ] **Production Logging System**
+#### **1.5 Production Monitoring**
+- [ ] **Comprehensive Logging**
   ```typescript
   // backend/src/utils/logger.ts
   - Structured logging with Winston
@@ -150,140 +73,69 @@ SendPay is a **Starknet-based onramp/offramp platform** that enables seamless co
   - Error tracking
   ```
 
-#### **3.2 Monitoring Dashboard**
-- [ ] **System Monitoring**
-  ```typescript
-  // backend/src/routes/admin/monitoring.ts
-  - Real-time system health
-  - Transaction volume metrics
-  - Error rate monitoring
-  - Performance analytics
+#### **1.6 Final Testing**
+- [ ] **End-to-End Validation**
+  - Test complete onramp flow
+  - Test complete offramp flow
+  - Verify all integrations
+  - Performance testing
+
+## 🔒 Phase 2: Production Deployment (1 week)
+
+### **Week 3: Mainnet Deployment**
+
+#### **2.1 Environment Configuration**
+- [ ] **Mainnet Setup**
+  ```bash
+  # Environment Variables
+  STARKNET_NETWORK=mainnet
+  STARKNET_RPC_URL=https://starknet-mainnet.public.blastapi.io/rpc/v0_7
+  SENDPAY_CONTRACT_ADDRESS=your_mainnet_contract_address
+  USDC_MAINNET_ADDRESS=0x053C91253BC9682c04929cA02ED00b3E423f6710D2ee7e0D5EBB06F3eCF368A8
   ```
 
-#### **3.3 Alert System**
-- [ ] **Automated Alerts**
-  ```typescript
-  // backend/src/services/alert.service.ts
-  - Critical error notifications
-  - Performance degradation alerts
-  - Security incident alerts
-  - Integration with Slack/Email
-  ```
+#### **2.2 Smart Contract Deployment**
+- [ ] **Mainnet Contract Deployment**
+  - Deploy SendPay contract to mainnet
+  - Configure admin roles
+  - Set up token whitelist
+  - Initialize system parameters
 
-### **Week 6-7: Operational Tools**
+#### **2.3 Production Infrastructure**
+- [ ] **Deployment Setup**
+  - Configure production environment
+  - Set up monitoring and alerting
+  - Configure Flutterwave production webhooks
+  - Set up Apibara mainnet indexing
 
-#### **3.4 Admin Dashboard**
-- [ ] **Management Interface**
-  ```typescript
-  // frontend/src/app/admin/
-  - Transaction management
-  - User support tools
-  - System configuration
-  - Compliance reporting
-  ```
-
-#### **3.5 Reconciliation Tools**
-- [ ] **Financial Reconciliation**
-  ```typescript
-  // backend/src/services/reconciliation.service.ts
-  - Automated reconciliation
-  - Discrepancy detection
-  - Manual override tools
-  - Audit trail
-  ```
-
-## 🚀 Phase 4: Advanced Features (2-4 weeks)
-
-### **Week 7-9: Enhanced User Experience**
-
-#### **4.1 Instant Settlements**
-- [ ] **Fast Processing**
-  ```typescript
-  // Optimize processing times
-  - Reduce settlement time to <1 hour
-  - Implement instant confirmations
-  - Add progress tracking
-  - Real-time notifications
-  ```
-
-#### **4.2 Batch Processing**
-- [ ] **Efficiency Improvements**
-  ```typescript
-  // backend/src/services/batch.service.ts
-  - Batch withdrawal processing
-  - Optimized gas usage
-  - Reduced transaction costs
-  - Improved scalability
-  ```
-
-#### **4.3 Advanced Analytics**
-- [ ] **Business Intelligence**
-  ```typescript
-  // frontend/src/app/analytics/
-  - Transaction analytics
-  - User behavior insights
-  - Revenue tracking
-  - Performance metrics
-  ```
-
-### **Week 9-11: Mobile & API Enhancements**
-
-#### **4.4 Mobile Application**
-- [ ] **React Native App**
-  ```typescript
-  // mobile/
-  - Native mobile experience
-  - Push notifications
-  - Biometric authentication
-  - Offline functionality
-  ```
-
-#### **4.5 Public API**
-- [ ] **Developer API**
-  ```typescript
-  // backend/src/routes/api/
-  - Public API endpoints
-  - API key management
-  - Rate limiting
-  - Documentation
-  ```
+#### **2.4 Launch Preparation**
+- [ ] **Pre-Launch Checklist**
+  - Security audit
+  - Performance testing
+  - Documentation updates
+  - Support system setup
 
 ## 📋 Detailed Implementation Tasks
 
 ### **Critical Path Items**
 
-#### **1. Flutterwave Integration (Critical)**
+#### **1. Flutterwave V4 Integration (Critical)**
 ```typescript
 // Priority: HIGH - Required for MVP
 Files to modify:
+- backend/src/routes/payment.ts
+- frontend/src/app/payment/page.tsx
 - backend/src/services/flutterwave.service.ts
-- backend/src/routes/flutterwave.ts
-- backend/src/routes/withdrawal.ts
 
 Tasks:
-1. Implement bank transfer initiation
-2. Add webhook handling for payment status
-3. Complete settlement proof generation
-4. Add retry logic for failed transfers
-5. Remove all mock implementations
+1. Implement Flutterwave V4 order creation
+2. Add bank transfer payment processing
+3. Update frontend payment flow
+4. Add payment status tracking
+5. Test end-to-end payment processing
 ```
 
-#### **2. Settlement Proof Generation (Critical)**
-```typescript
-// Priority: HIGH - Required for contract completion
-Files to create/modify:
-- backend/src/services/signature.service.ts
-- backend/src/routes/withdrawal.ts
-
-Tasks:
-1. Implement ECDSA signature generation
-2. Create settlement proof structure
-3. Add signature verification
-4. Complete contract integration
-5. Remove mock signatures
-```
-
-#### **3. Admin Security (High)**
+#### **2. Admin Security (High)**
 ```typescript
 // Priority: HIGH - Required for production
 Files to create/modify:
@@ -296,12 +148,10 @@ Tasks:
 2. Add 2FA for admin operations
 3. Create admin authentication
 4. Add audit logging
-5. Remove commented admin checks
+5. Test security features
 ```
 
-### **Secondary Tasks**
-
-#### **4. Production Monitoring**
+#### **3. Production Monitoring (Medium)**
 ```typescript
 // Priority: MEDIUM - Required for operations
 Files to create:
@@ -317,77 +167,85 @@ Tasks:
 5. Add performance metrics
 ```
 
-#### **5. Compliance Features**
+### **Secondary Tasks**
+
+#### **4. Rate Limiting & Security**
 ```typescript
-// Priority: MEDIUM - Required for regulations
+// Priority: MEDIUM - Required for production
 Files to create:
-- backend/src/services/compliance.service.ts
+- backend/src/middleware/rateLimit.ts
 - backend/src/middleware/security.ts
-- frontend/src/app/compliance/
 
 Tasks:
-1. Implement KYC/AML system
-2. Add transaction monitoring
-3. Create compliance reporting
-4. Add risk assessment
-5. Implement regulatory reporting
+1. Implement API rate limiting
+2. Add input validation
+3. Add security headers
+4. Test security features
+5. Performance optimization
+```
+
+#### **5. Documentation Updates**
+```typescript
+// Priority: LOW - Required for maintenance
+Files to update:
+- README.md
+- API documentation
+- Deployment guides
+
+Tasks:
+1. Update mainnet deployment docs
+2. Add production configuration guide
+3. Update API documentation
+4. Add troubleshooting guide
+5. Update user guides
 ```
 
 ## 🎯 Success Metrics
 
 ### **Phase 1 Completion Criteria**
 - [ ] All mock code removed and replaced with real implementations
-- [ ] Flutterwave integration complete with webhook handling
-- [ ] Settlement proof generation working end-to-end
-- [ ] Onramp/offramp flows fully automated
+- [ ] Flutterwave V4 integration complete with webhook handling
+- [ ] Payment processing works end-to-end
+- [ ] Admin security implemented and tested
 - [ ] All critical features tested and working
 
 ### **Phase 2 Completion Criteria**
-- [ ] Admin role system implemented and tested
-- [ ] 2FA integrated for all admin operations
-- [ ] Compliance features implemented
+- [ ] Mainnet deployment successful
+- [ ] Production monitoring active
 - [ ] Security audit passed
-- [ ] All security vulnerabilities addressed
+- [ ] Performance benchmarks met
+- [ ] User onboarding flow tested
 
-### **Phase 3 Completion Criteria**
-- [ ] Comprehensive monitoring system active
-- [ ] Admin dashboard functional
-- [ ] Alert system configured and tested
-- [ ] Reconciliation tools operational
-- [ ] Production deployment successful
-
-### **Phase 4 Completion Criteria**
-- [ ] Advanced features implemented
-- [ ] Mobile app launched
-- [ ] Public API available
-- [ ] Performance optimizations complete
-- [ ] User experience enhanced
+### **Overall Success Criteria**
+- [ ] Complete onramp flow: Fiat → Crypto working
+- [ ] Complete offramp flow: Crypto → Fiat working
+- [ ] Payment processing: Real transactions
+- [ ] Admin operations: Secure and functional
+- [ ] Production deployment: Stable and monitored
 
 ## 📅 Timeline Summary
 
 | Phase | Duration | Key Deliverables | Critical Path |
 |-------|----------|------------------|---------------|
-| **Phase 1** | 2-3 weeks | Core integrations complete | Flutterwave + Settlement |
-| **Phase 2** | 1-2 weeks | Security & compliance | Admin roles + 2FA |
-| **Phase 3** | 1-2 weeks | Production infrastructure | Monitoring + Admin tools |
-| **Phase 4** | 2-4 weeks | Advanced features | Mobile app + API |
+| **Phase 1** | 1-2 weeks | Final integrations complete | Flutterwave V4 + Admin Security |
+| **Phase 2** | 1 week | Production deployment | Mainnet + Monitoring |
 
 ## 🚀 Launch Strategy
 
 ### **MVP Launch (End of Phase 1)**
-- **Target**: 6-8 weeks from now
+- **Target**: 2-3 weeks from now
 - **Features**: Complete onramp/offramp functionality
 - **Users**: Limited beta testing group
 - **Revenue**: Basic transaction fees
 
 ### **Production Launch (End of Phase 2)**
-- **Target**: 8-10 weeks from now
+- **Target**: 3-4 weeks from now
 - **Features**: Full security and compliance
 - **Users**: Public launch
 - **Revenue**: Full fee structure
 
-### **Scale Launch (End of Phase 4)**
-- **Target**: 12-16 weeks from now
+### **Scale Launch (Future)**
+- **Target**: 6-8 weeks from now
 - **Features**: Advanced features and mobile app
 - **Users**: Full market penetration
 - **Revenue**: Premium features and API access
@@ -407,23 +265,23 @@ Tasks:
 - **Third-party APIs**: $100-500/month
 
 ### **Total Estimated Cost**
-- **Development**: $15,000-25,000
+- **Development**: $5,000-10,000
 - **Infrastructure**: $500-1,500/month
-- **Compliance**: $5,000-10,000 (one-time)
+- **Compliance**: $2,000-5,000 (one-time)
 
 ## 🎯 Next Steps
 
 ### **Immediate Actions (This Week)**
-1. **Remove all mock code** from the codebase
-2. **Complete Flutterwave integration** for bank transfers
-3. **Implement settlement proof generation** for withdrawals
-4. **Add comprehensive error handling** throughout the platform
+1. **Complete Flutterwave V4 integration** for payment processing
+2. **Implement admin security** with role-based access control
+3. **Add production monitoring** and alerting
+4. **Test end-to-end flows** thoroughly
 
 ### **Week 1-2 Priorities**
-1. **Flutterwave Transfer API** implementation
-2. **Webhook handling** for payment status updates
-3. **Settlement proof generation** and contract integration
-4. **Testing** of complete onramp/offramp flows
+1. **Flutterwave V4 Order API** implementation
+2. **Frontend payment flow** updates
+3. **Admin security** implementation
+4. **Production monitoring** setup
 
 ### **Success Criteria**
 - [ ] All onramp/offramp flows working end-to-end
@@ -434,4 +292,4 @@ Tasks:
 
 ---
 
-**This roadmap provides a clear path from the current 85% completion to a fully functional, production-ready onramp/offramp platform. With focused development over the next 6-8 weeks, SendPay can successfully launch and capture market share in the Nigerian crypto-fiat bridge market.**
+**This roadmap provides a clear path from the current 95% completion to a fully functional, production-ready onramp/offramp platform. With focused development over the next 2-3 weeks, SendPay can successfully launch and capture market share in the Nigerian crypto-fiat bridge market.**

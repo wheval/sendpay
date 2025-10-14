@@ -25,6 +25,7 @@ interface Transaction {
     | 'event_emitted'
     | 'payout_pending'
     | 'payout_completed'
+    | 'onchain_completed'
     | 'payout_failed'
     | 'credit_pending'
     | 'credited'
@@ -116,6 +117,7 @@ export default function HistoryPage() {
     [
       'credited',
       'payout_completed',
+      'onchain_completed',
     ] as Transaction['status'][]
   ).includes(status)
 
@@ -168,10 +170,10 @@ export default function HistoryPage() {
   })
 
   const getStatusIcon = (status: Transaction['status']) => {
-    if (isCompletedGroup(status)) return <CheckCircle className="h-4 w-4 text-green-600" />
-    if (isFailedGroup(status)) return <XCircle className="h-4 w-4 text-red-600" />
-    if (isPendingGroup(status)) return <Clock className="h-4 w-4 text-yellow-600" />
-    return <AlertCircle className="h-4 w-4 text-blue-600" />
+    if (isCompletedGroup(status)) return <CheckCircle className="h-3 w-3 md:h-4 md:w-4 text-green-600" />
+    if (isFailedGroup(status)) return <XCircle className="h-3 w-3 md:h-4 md:w-4 text-red-600" />
+    if (isPendingGroup(status)) return <Clock className="h-3 w-3 md:h-4 md:w-4 text-yellow-600" />
+    return <AlertCircle className="h-3 w-3 md:h-4 md:w-4 text-blue-600" />
   }
 
   const getStatusColor = (status: Transaction['status']) => {
@@ -184,15 +186,15 @@ export default function HistoryPage() {
   const getTypeIcon = (flow: 'onramp' | 'offramp' | string) => {
     switch (flow) {
       case 'onramp':
-        return <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+        return <div className="w-4  mt-1 sm:w-8 h-4 sm:h-8 bg-green-100 rounded-full flex items-center justify-center">
           <span className="text-green-600 font-bold text-sm">+</span>
         </div>
       case 'offramp':
-        return <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+        return <div className="w-4  mt-1 sm:w-8 h-4 sm:h-8 bg-red-100 rounded-full flex items-center justify-center">
           <span className="text-red-600 font-bold text-sm">-</span>
         </div>
       default:
-        return <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+        return <div className="w-4  mt-1 sm:w-8 h-4 sm:h-8 bg-blue-100 rounded-full flex items-center justify-center">
           <span className="text-blue-600 font-bold text-sm">→</span>
         </div>
     }
@@ -294,7 +296,7 @@ export default function HistoryPage() {
               View all your transaction history and activity
             </p>
           </div>
-          <Button variant="outline" onClick={() => router.push('/dashboard')}>
+          <Button variant="outline"className="hidden md:flex" onClick={() => router.push('/dashboard')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Dashboard
           </Button>
@@ -444,7 +446,7 @@ export default function HistoryPage() {
               {filteredTransactions.length} of {transactions.length} transactions
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0 shadow-none p-0.5">
             {filteredTransactions.length === 0 ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
@@ -460,12 +462,12 @@ export default function HistoryPage() {
                 {filteredTransactions.map((transaction) => (
                   <div
                     key={transaction.id}
-                    className="flex items-center space-x-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                    className="flex lg:items-center md:space-x-4 space-x-1 p-2 md:p-4 border-b hover:bg-muted/50 transition-colors"
                   >
                     {getTypeIcon(transaction.flow)}
                     
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col lg:flex-row lg:items-center text-sm md:text-base lg:justify-between">
                         <div>
                           <p className="font-medium truncate">{transaction.description}</p>
                           <div className="flex items-center space-x-2 text-sm text-muted-foreground">
@@ -473,7 +475,7 @@ export default function HistoryPage() {
                             {transaction.reference && (
                               <>
                                 <span>•</span>
-                                <span className="font-mono">{transaction.reference}</span>
+                                <span className="text-xs md:text-sm font-mono">{transaction.reference}</span>
                               </>
                             )}
                           </div>
@@ -484,8 +486,8 @@ export default function HistoryPage() {
                           )}
                         </div>
                         
-                        <div className="text-right">
-                          <div className="flex items-center space-x-2">
+                        <div className="text-right text-sm md:text-base">
+                          <div className="flex items-center lg:justify-end space-x-2">
                             <div className="text-right flex items-center gap-1">
                               <p className="font-medium">
                                 {transaction.flow === 'offramp' ? '-' : '+'}
@@ -496,7 +498,7 @@ export default function HistoryPage() {
                               </p>
                             </div>
                           </div>
-                          <p className={`text-sm font-medium flex items-center gap-1 capitalize ${getStatusColor(transaction.status)}`}>
+                          <p className={`text-xs md:text-sm font-medium flex items-center gap-1 capitalize ${getStatusColor(transaction.status)}`}>
                             {getStatusIcon(transaction.status)}
                             {String(transaction.status).replace(/_/g, ' ')}
                           </p>

@@ -16,7 +16,7 @@ const TransactionSchema = new Schema<ITransactionDocument>({
     type: String,
     enum: [
       // offramp lifecycle
-      'created', 'signed', 'submitted_onchain', 'event_emitted', 'payout_pending', 'payout_completed', 'payout_failed',
+      'created', 'signed', 'submitted_onchain', 'event_emitted', 'payout_pending', 'payout_completed', 'onchain_completed', 'payout_failed',
       // onramp lifecycle
       'credit_pending', 'credited', 'credit_failed'
     ],

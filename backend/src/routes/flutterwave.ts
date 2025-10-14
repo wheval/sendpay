@@ -117,8 +117,8 @@ router.post('/onramp/initiate', authenticateToken, async (req: Request, res: Res
       metadata: { fiat_tx_ref }
     });
 
-    // Create real Flutterwave hosted payment link
-    const hostedUrl = await flutterwaveService.createHostedPayment({
+    // Create real Flutterwave V4 order
+    const order = await flutterwaveService.createOrder({
       amount: tx.amountNGN,
       currency: 'NGN',
       tx_ref: fiat_tx_ref,
@@ -126,11 +126,11 @@ router.post('/onramp/initiate', authenticateToken, async (req: Request, res: Res
         email: req.user.email,
         name: req.user.name
       },
-      customizations: {
-        title: 'SendPay - Deposit Funds',
-        description: `Deposit ${tx.amountNGN} NGN to your SendPay account`
-      }
+      redirect_url: `${process.env.FRONTEND_URL || 'https://sendpay-five.vercel.app'}/dashboard`,
+      description: `Deposit ${tx.amountNGN} NGN to your SendPay account`
     });
+
+    const hostedUrl = order.data?.checkout_url;
 
     res.json({ success: true, data: { fiat_tx_ref, hostedUrl, transactionId: tx._id } });
   } catch (error: any) {
@@ -369,9 +369,22 @@ router.get('/balance', authenticateToken, async (req: Request, res: Response) =>
  */
 router.post('/webhook', async (req: Request, res: Response) => {
   try {
-    const { event, data } = req.body;
+    // Basic security: Verify the request is from Flutterwave
+    const userAgent = req.headers['user-agent'];
+    const forwardedFor = req.headers['x-forwarded-for'];
+    const realIp = req.headers['x-real-ip'];
     
-    console.log('📡 Flutterwave Webhook Received:', { event, data });
+    console.log('📡 Flutterwave Webhook Received:', {
+      method: req.method,
+      userAgent,
+      ip: forwardedFor || realIp || req.connection.remoteAddress,
+      headers: req.headers,
+      body: req.body,
+      timestamp: new Date().toISOString()
+    });
+
+
+    const { event, data } = req.body;
 
     // Verify webhook signature (recommended for production)
     const signature = req.headers['verif-hash'];
@@ -388,9 +401,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
         await handleTransferCompleted(data);
         // Attempt to complete on-chain withdrawal if we have mapping
         try {
-          const reference = data?.reference; // expected wd_<withdrawalId>
-          if (reference && typeof reference === 'string' && reference.startsWith('wd_')) {
-            const withdrawalId = reference.slice(3);
+          const reference = data?.reference; // expected sendpay_<withdrawalId>
+          if (reference && typeof reference === 'string' && reference.startsWith('sendpay_')) {
+            const withdrawalId = reference.slice(9);
             // Generate real settlement proof signature
             const settlementData = {
               fiat_tx_hash: String(data?.id || data?.tx_ref || reference),
@@ -460,15 +473,16 @@ async function handleTransferCompleted(data: any) {
     });
     
     if (transaction) {
-      // Update transaction status
+      // Update transaction status - Flutterwave payment completed
       await Transaction.findByIdAndUpdate(transaction._id, {
-        status: 'completed',
+        status: 'payout_completed',
         metadata: {
           ...transaction.metadata,
           flutterwave_status: 'completed',
           flutterwave_completed_at: new Date(),
           webhookProcessed: true,
-          processedAt: new Date()
+          processedAt: new Date(),
+          payoutCompletedBy: 'webhook'
         }
       });
       
@@ -491,16 +505,17 @@ async function handleTransferFailed(data: any) {
     });
     
     if (transaction) {
-      // Update transaction status
+      // Update transaction status with deduplication marker
       await Transaction.findByIdAndUpdate(transaction._id, {
-        status: 'failed',
+        status: 'payout_failed',
         metadata: {
           ...transaction.metadata,
           flutterwave_status: 'failed',
           flutterwave_failed_at: new Date(),
           flutterwave_error: data.message || 'Transfer failed',
           webhookProcessed: true,
-          processedAt: new Date()
+          processedAt: new Date(),
+          failedBy: 'webhook'
         }
       });
       
