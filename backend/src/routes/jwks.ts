@@ -60,17 +60,7 @@ function getJwk() {
   throw new Error('JWK not configured. Set JWT_JWKS_JSON, JWT_PUBLIC_JWK, or JWT_PUBLIC_KEY_PEM.');
 }
 
-// Standard JWKS endpoint (returns { keys: [...] })
-router.get('/.well-known/jwks.json', (_req, res) => {
-  try {
-    const jwk = getJwk();
-    res.json({ keys: [jwk] });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Single JWK endpoint for jwt.io compatibility (returns just the JWK object)
+// Single JWK endpoint (returns just the JWK object)
 router.get('/.well-known/jwk.json', (_req, res) => {
   try {
     const jwk = getJwk();
