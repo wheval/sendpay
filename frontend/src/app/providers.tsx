@@ -3,8 +3,6 @@
 import { ThemeProvider } from "@/components/theme-provider"
 import { ChipiProvider } from "@/components/providers/ChipiProvider"
 import { Toaster } from "@/components/ui/toaster"
-import { StarknetConfig, publicProvider } from "@starknet-react/core"
-import { mainnet } from "@starknet-react/chains"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
