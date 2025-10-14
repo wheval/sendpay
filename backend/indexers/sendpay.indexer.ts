@@ -295,9 +295,36 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
           });
 
           // Find the pending transaction created by our backend signature step using tx_ref
-          const pendingTx = await Transaction.findOne({
+          // Handle potential txRef format differences (with/without leading zeros)
+          let pendingTx = await Transaction.findOne({
             "metadata.txRef": txRef,
           });
+          
+          // If not found, try with normalized txRef (remove leading zeros)
+          if (!pendingTx && txRef.startsWith('0x')) {
+            const normalizedTxRef = txRef.replace(/^0x0+/, '0x');
+            if (normalizedTxRef !== txRef) {
+              pendingTx = await Transaction.findOne({
+                "metadata.txRef": normalizedTxRef,
+              });
+              if (pendingTx) {
+                useLogger().info(`[sendpay.indexer] Found transaction with normalized txRef: ${normalizedTxRef}`);
+              }
+            }
+          }
+          
+          // If still not found, try with padded txRef (add leading zero if needed)
+          if (!pendingTx && txRef.startsWith('0x')) {
+            const paddedTxRef = txRef.replace(/^0x/, '0x0');
+            if (paddedTxRef !== txRef) {
+              pendingTx = await Transaction.findOne({
+                "metadata.txRef": paddedTxRef,
+              });
+              if (pendingTx) {
+                useLogger().info(`[sendpay.indexer] Found transaction with padded txRef: ${paddedTxRef}`);
+              }
+            }
+          }
           
           if (pendingTx) {
             useLogger().info(`[sendpay.indexer] Found pending transaction for txRef: ${txRef}`, {
