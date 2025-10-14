@@ -89,7 +89,8 @@ export default function HistoryPage() {
       } catch (err: unknown) {
         setTransactions([])
         setSummary(null)
-        if (!err?.message?.includes('404')) {
+        const msg = err instanceof Error ? err.message : ''
+        if (!msg.includes('404')) {
           setError('Failed to load transaction history')
         }
       } finally {

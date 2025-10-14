@@ -19,7 +19,7 @@ const router = Router();
  */
 router.post('/signature', authenticateToken, async (req: Request, res: Response) => {
   try {
-    const { amount, tokenAddress, bankAccountId, token } = req.body;
+    const { amount, tokenAddress, bankAccountId, token, lockedExchangeRate } = req.body;
     console.log('[withdrawal.signature] payload', { amount, tokenAddress, bankAccountId, token });
     const userId = req.user._id;
 
@@ -130,7 +130,8 @@ router.post('/signature', authenticateToken, async (req: Request, res: Response)
         userWalletAddress,
         decimals: String(decimalsNum),
         amountUint,
-        fxRateUsed
+        fxRateUsed,
+        lockedExchangeRate: typeof lockedExchangeRate === 'number' ? lockedExchangeRate : undefined
       }
     });
 

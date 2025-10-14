@@ -153,8 +153,12 @@ export class SignatureService {
     try {
       // Create a unique reference from bank details
       const data = `${bankDetails.accountNumber}-${bankDetails.bankCode}-${bankDetails.accountName}`;
-      const hash = crypto.createHash('sha256').update(data).digest('hex');
-      return '0x' + hash;
+      // sha256 is 32 bytes (256 bits) which can exceed felt252; clamp to 251 bits
+      const hashHex = crypto.createHash('sha256').update(data).digest('hex');
+      const full = BigInt('0x' + hashHex);
+      const mask = (1n << 251n) - 1n; // felt252 max (2^251 - 1)
+      const felt = (full & mask).toString(16);
+      return '0x' + felt;
     } catch (error: any) {
       console.error('Transaction reference generation error:', error);
       throw new Error(`Failed to generate transaction reference: ${error.message}`);

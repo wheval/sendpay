@@ -90,6 +90,8 @@ const USDT_ADDRESSES: Record<
 
 export type TokenSymbol = "STRK" | "ETH" | "USDC" | "USDT";
 
+export const DEFAULT_USD_NGN_FALLBACK: number = Number(process.env.USD_NGN_FALLBACK || 1500)
+
 export const TOKENS: Record<
   TokenSymbol | "NETWORK",
   { address: string; decimals: string } | StarknetNetwork

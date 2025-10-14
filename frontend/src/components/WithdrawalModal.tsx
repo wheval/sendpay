@@ -17,6 +17,7 @@ import { getTokenConfig } from "@/lib/constants";
 import { cookies } from "@/lib/cookies";
 import { EnterPinModal } from "./EnterPinModal";
 import { X } from "lucide-react";
+import { DEFAULT_USD_NGN_FALLBACK }  from "@/lib/constants";
 
 interface WithdrawalModalProps {
   open: boolean;
@@ -54,7 +55,9 @@ export function WithdrawalModal({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
-  const [exchangeRate, setExchangeRate] = useState<number>(exchangeRateProp ?? 1500); // Default NGN rate
+  const [exchangeRate, setExchangeRate] = useState<number>(exchangeRateProp ?? DEFAULT_USD_NGN_FALLBACK); // Default NGN rate
+  const [strkUsd, setStrkUsd] = useState<number>(0); // STRK -> USD price
+  const [lockedRate, setLockedRate] = useState<number | null>(null); // Locked rate when withdrawal starts
 
   // Pre-select default bank account when modal opens
   React.useEffect(() => {
@@ -68,33 +71,44 @@ export function WithdrawalModal({
   React.useEffect(() => {
     if (typeof exchangeRateProp === 'number' && exchangeRateProp > 0) {
       setExchangeRate(exchangeRateProp);
+    }
+    if (!open) {
+      // Reset locked rate when modal closes
+      setLockedRate(null);
       return;
     }
-    if (!open) return;
-    (async () => {
-      try {
-        const token = cookies.get("jwt") || undefined;
-        const res = await api.transaction.summary(token);
-        const rate = (res?.exchangeRate) ?? (res?.data?.exchangeRate);
-        if (typeof rate === 'number' && rate > 0) setExchangeRate(rate);
-      } catch (error) {
-        console.error("Failed to fetch exchange rate:", error);
-      }
-    })();
+    
+    // Only fetch rate if no rate was provided as prop
+    if (typeof exchangeRateProp !== 'number' || exchangeRateProp <= 0) {
+      (async () => {
+        try {
+          const token = cookies.get("jwt") || undefined;
+          const res = await api.transaction.summary(token);
+          const rate = (res?.exchangeRate) ?? (res?.data?.exchangeRate);
+          const price = res?.data?.prices?.STRK_USD ?? res?.prices?.STRK_USD;
+          if (typeof rate === 'number' && rate > 0) setExchangeRate(rate);
+          if (typeof price === 'number' && price > 0) setStrkUsd(price);
+        } catch (error) {
+          console.error("Failed to fetch exchange rate:", error);
+        }
+      })();
+    }
   }, [open, exchangeRateProp]);
 
   // Clear error when amount changes and meets minimum requirement
   React.useEffect(() => {
     if (error && amount) {
       const amountNum = parseFloat(amount);
-      const nairaEquivalent = amountNum * exchangeRate;
+      const usdPerToken = selectedToken === 'USDC' ? 1 : (strkUsd || 0);
+      const currentRate = lockedRate || exchangeRate;
+      const nairaEquivalent = amountNum * usdPerToken * currentRate;
 
       // Only clear error if the new amount meets the minimum requirement
       if (nairaEquivalent >= 200) {
         setError("");
       }
     }
-  }, [amount, error, exchangeRate]);
+  }, [amount, error, exchangeRate, lockedRate]);
 
   if (!open) return null;
 
@@ -106,8 +120,12 @@ export function WithdrawalModal({
 
     const amountNum = parseFloat(amount);
 
+    // Lock the exchange rate when withdrawal starts
+    setLockedRate(exchangeRate);
+
     // Check minimum withdrawal amount (200 NGN)
-    const nairaEquivalent = amountNum * exchangeRate;
+    const usdPerToken = selectedToken === 'USDC' ? 1 : (strkUsd || 0);
+    const nairaEquivalent = amountNum * usdPerToken * exchangeRate;
     if (nairaEquivalent < 200) {
       setError(
         `Minimum withdrawal amount is ₦200. You entered ₦${Math.round(nairaEquivalent).toLocaleString('en-NG')}`
@@ -146,12 +164,16 @@ export function WithdrawalModal({
       };
       const token = cookies.get("jwt");
       
+      // Use locked exchange rate (set when withdrawal button was clicked)
+      const lockedExchangeRate = lockedRate || exchangeRate;
+
       const signatureResponse = await api.withdrawal.signature(
         {
-        amount,
-        tokenAddress: tokenConfig.address,
+          amount,
+          tokenAddress: tokenConfig.address,
           bankAccountId: selectedBank,
-          token: selectedToken,
+          token: 'USDC',
+          lockedExchangeRate,
         },
         token || undefined
       );
@@ -174,14 +196,32 @@ export function WithdrawalModal({
       
       const sendPayContractAddress =
         process.env.NEXT_PUBLIC_SENDPAY_CONTRACT_ADDRESS ||
-        "0x0444d5c9b2a6375bdce805338cdf6340439be92aec2e854704e77bedcdfd929a";
+        "0x03bfa7e91e5a6b006d0172e854e0ad2ef5c06ab7e6329116003022a28caf7b39";
       
       // Convert amount to proper format (assuming 6 decimals for USDC)
       const amountWithDecimals = (
         parseFloat(amount) * Math.pow(10, parseInt(tokenConfig.decimals))
       ).toString();
 
-      const calls = [
+      // Toggle to test approve-only path
+      const APPROVE_ONLY = false;
+
+      // Use latest block timestamp when available; fallback to local time
+      //TODO: Make this dynamic based on the network
+      const timestampFelt = String(
+        await (async () => {
+          try {
+            const resp = await fetch('/api/starknet/time', { cache: 'no-store' });
+            if (resp.ok) {
+              const j = await resp.json();
+              if (j?.success && typeof j.timestamp === 'number') return j.timestamp;
+            }
+          } catch {}
+          return Math.floor(Date.now() / 1000);
+        })()
+      );
+
+      const callsAll = [
         {
           contractAddress: tokenConfig.address,
           entrypoint: "approve",
@@ -203,13 +243,15 @@ export function WithdrawalModal({
             request.tx_ref, // tx_ref
             request.nonce, // nonce low
             "0", // nonce high
-            String(request.timestamp), // timestamp as felt string
+            timestampFelt, // override timestamp to current block time window
             // Signature
             signature.r, // signature_r
             signature.s, // signature_s
           ],
         },
       ];
+
+      const calls = APPROVE_ONLY ? [callsAll[0]] : callsAll;
 
       // Step 3: Get wallet and execute multicall
       setStep("withdrawing");
@@ -333,47 +375,40 @@ export function WithdrawalModal({
             <>
               <div>
                 <Label htmlFor="token">Token</Label>
-                <Select
-                  value={selectedToken}
-                  onValueChange={(value: "USDC" | "STRK") =>
-                    setSelectedToken(value)
-                  }
-                  disabled={isLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select token" />
+                <Select value={"USDC"} disabled>
+                  <SelectTrigger className="disabled:opacity-100 [&_[data-slot=trigger]_[data-slot=icon]]:hidden">
+                    <SelectValue className="disabled:opacity-100" placeholder="USDC" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="[&_[data-slot=trigger]_[data-slot=icon]]:hidden">
                     <SelectItem value="USDC">USDC</SelectItem>
-                    <SelectItem value="STRK">STRK</SelectItem>
                   </SelectContent>
                 </Select>
-                <div className="text-sm text-muted-foreground mt-1">
-                  Balance:{" "}
-                  {selectedToken === "USDC"
-                    ? usdcBalance
-                      ? `${parseFloat(usdcBalance).toFixed(2)} USDC`
-                      : "Loading..."
-                    : strkBalance
-                    ? `${parseFloat(strkBalance).toFixed(6)} STRK`
-                    : "Loading..."}
+                <div className="text-xs lg:text-sm text-muted-foreground mt-1">
+                  Balance: {usdcBalance ? `${parseFloat(usdcBalance).toFixed(2)} USDC` : "Loading..."}
                 </div>
               </div>
 
               <div>
-                <Label htmlFor="amount">Amount ({selectedToken})</Label>
+                <Label htmlFor="amount">Amount (USDC)</Label>
                 <Input
                   id="amount"
                   type="number"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="Enter amount"
-                  step={selectedToken === "USDC" ? "0.01" : "0.000001"}
+                  step={"0.01"}
                   disabled={isLoading}
                 />
                 {amount && (
-                  <div className="text-sm text-muted-foreground mt-1">
-                    ≈ ₦{Math.round(parseFloat(amount) * exchangeRate).toLocaleString('en-NG')}
+                  <div className="text-xs lg:text-sm text-muted-foreground flex items-center gap-x-2 mt-1">
+                    <span className="text-xs">you will receive:</span>
+                    {(() => {
+                      const amountNum = parseFloat(amount || '0');
+                      const usdPerToken = 1;
+                      const currentRate = lockedRate || exchangeRate;
+                      const ngn = Math.round(amountNum * usdPerToken * currentRate);
+                      return `≈ ₦${ngn.toLocaleString('en-NG')}`;
+                    })()}
                   </div>
                 )}
               </div>
@@ -396,6 +431,12 @@ export function WithdrawalModal({
                     ))}
                   </SelectContent>
                 </Select>
+                <div className="text-xs lg:text-sm text-muted-foreground mt-1">
+                  {/* this should display the account name */}
+                  {selectedBank && bankAccounts
+                    ? bankAccounts.find((bank) => bank.id === selectedBank)?.accountName || ""
+                    : ""}
+                </div>
               </div>
 
               {error && (
@@ -418,12 +459,20 @@ export function WithdrawalModal({
 
               <Button
                 onClick={handleWithdrawal}
-                disabled={isLoading || !amount || !selectedBank}
+                disabled={isLoading || !amount || !selectedBank || !usdcBalance || parseFloat(usdcBalance) <= 0 || parseFloat(amount || '0') > parseFloat(usdcBalance || '0')}
                 className="w-full"
               >
-                {isLoading
-                  ? "Processing..."
-                  : `Withdraw ₦${Math.round(parseFloat(amount || "0") * exchangeRate).toLocaleString('en-NG')}`}
+                {(() => {
+                  if (isLoading) return 'Processing...';
+                  if (!usdcBalance || parseFloat(usdcBalance) <= 0) return 'Insufficient USDC Balance';
+                  const amountNum = parseFloat(amount || '0');
+                  const balanceNum = parseFloat(usdcBalance || '0');
+                  if (amountNum > balanceNum) return 'Amount exceeds balance';
+                  const usdPerToken = 1; // USDC only
+                  const currentRate = lockedRate || exchangeRate;
+                  const ngn = Math.round(amountNum * usdPerToken * currentRate);
+                  return `Withdraw ₦${ngn.toLocaleString('en-NG')}`;
+                })()}
               </Button>
             </>
           )}
@@ -435,7 +484,7 @@ export function WithdrawalModal({
         onClose={() => setShowPinModal(false)}
         onPinEntered={(pin) => executeWithdrawal(pin)}
         title="Enter PIN to Withdraw"
-        description={`Enter your PIN to withdraw ₦${Math.round(parseFloat(amount || "0") * exchangeRate).toLocaleString('en-NG')} to your bank account`}
+        description={`Enter your PIN to withdraw ₦${Math.round(parseFloat(amount || "0") * (lockedRate || exchangeRate)).toLocaleString('en-NG')} to your bank account`}
       />
     </div>
   );
