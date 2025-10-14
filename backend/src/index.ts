@@ -36,21 +36,18 @@ const corsOptions = {
   optionsSuccessStatus: 204
 };
 
-// Apply CORS middleware to all routes except webhooks
+// Debug middleware to log requests
 app.use((req, res, next) => {
-  // Skip CORS for webhook routes - they'll be handled separately
-  if (req.path.startsWith('/api/flutterwave/webhook')) {
-    return next();
-  }
-  cors(corsOptions)(req, res, next);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
+  next();
 });
 
-// Disable CORS entirely for webhook endpoint (most secure for webhooks)
-app.use('/api/flutterwave/webhook', (req, res, next) => {
-  // Set headers to disable CORS for this specific route
+// Webhook-specific middleware (raw body + CORS bypass)
+app.use('/api/flutterwave/webhook', express.raw({ type: 'application/json' }), (req, res, next) => {
+  // Set headers to disable CORS for webhook endpoint
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, verif-hash');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, flutterwave-signature');
   
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
@@ -61,10 +58,13 @@ app.use('/api/flutterwave/webhook', (req, res, next) => {
   next();
 });
 
-// Debug middleware to log CORS issues
+// Apply CORS middleware to all other routes
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
-  next();
+  // Skip CORS for webhook routes (already handled above)
+  if (req.path.startsWith('/api/flutterwave/webhook')) {
+    return next();
+  }
+  cors(corsOptions)(req, res, next);
 });
 
 app.use(express.json());

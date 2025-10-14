@@ -7,8 +7,81 @@ import { generateReference } from '../utils/helpers';
 import { Transaction } from '../models/Transaction';
 import { BankAccount } from '../models/BankAccount';
 import { exchangeRateService } from '../services/exchange-rate.service';
+import crypto from 'crypto';
 
 const router = Router();
+
+/**
+ * Verify Flutterwave webhook signature using HMAC-SHA256
+ * Following Flutterwave's official documentation
+ */
+function isValidFlutterwaveWebhook(rawBody: Buffer, signature: string, secretHash: string): boolean {
+  if (!signature || !secretHash) {
+    return false;
+  }
+  
+  const hash = crypto
+    .createHmac('sha256', secretHash)
+    .update(rawBody)
+    .digest('base64');
+    
+  return hash === signature;
+}
+
+/**
+ * Verify transaction details with Flutterwave API (Best Practice)
+ * This ensures the webhook data hasn't been compromised
+ */
+async function verifyTransactionWithFlutterwave(transactionId: string, expectedAmount?: number, expectedCurrency?: string, expectedReference?: string): Promise<boolean> {
+  try {
+    // Use the Flutterwave service to get transaction details
+    const transfer = await flutterwaveService.getDirectTransfer(transactionId);
+    
+    if (!transfer?.data) {
+      console.warn('❌ Transaction verification failed: No data returned');
+      return false;
+    }
+    
+    const transaction = transfer.data;
+    
+    // Verify expected values if provided
+    if (expectedAmount && transaction.amount?.value !== expectedAmount) {
+      console.warn('❌ Transaction verification failed: Amount mismatch', {
+        expected: expectedAmount,
+        actual: transaction.amount?.value
+      });
+      return false;
+    }
+    
+    if (expectedCurrency && transaction.destination_currency !== expectedCurrency) {
+      console.warn('❌ Transaction verification failed: Currency mismatch', {
+        expected: expectedCurrency,
+        actual: transaction.destination_currency
+      });
+      return false;
+    }
+    
+    if (expectedReference && transaction.reference !== expectedReference) {
+      console.warn('❌ Transaction verification failed: Reference mismatch', {
+        expected: expectedReference,
+        actual: transaction.reference
+      });
+      return false;
+    }
+    
+    console.log('✅ Transaction verification passed:', {
+      id: transactionId,
+      status: transaction.status,
+      amount: transaction.amount?.value,
+      currency: transaction.destination_currency
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Transaction verification error:', error);
+    return false;
+  }
+}
 
 /**
  * GET /api/flutterwave/banks
@@ -94,48 +167,99 @@ router.post('/bank/add', authenticateToken, async (req: Request, res: Response) 
 
 /**
  * POST /api/flutterwave/onramp/initiate
- * Initiate hosted payment (on-ramp) and create pending deposit record
+ * Initiate Pay With Bank Transfer (PWBT) with dynamic virtual account
  */
 router.post('/onramp/initiate', authenticateToken, async (req: Request, res: Response) => {
   try {
-    const { amountUSD } = req.body;
+    const { amountUSD, expiryMinutes = 60 } = req.body;
     const user = req.user;
+    
     if (!amountUSD || Number(amountUSD) <= 0) {
       return res.status(400).json({ success: false, message: 'amountUSD required' });
     }
 
+    // Validate expiry time (max 365 days, min 1 minute)
+    const maxExpiryMinutes = 365 * 24 * 60; // 365 days in minutes
+    const minExpiryMinutes = 1;
+    const validatedExpiry = Math.max(minExpiryMinutes, Math.min(maxExpiryMinutes, Number(expiryMinutes) || 60));
+
     // Create fiat_tx_ref and store pending deposit transaction
     const fiat_tx_ref = generateReference();
+    const amountNGN = await exchangeRateService.convertUSDToNGN(Number(amountUSD));
+    
     const tx = await Transaction.create({
       userId: user._id,
-      type: 'deposit',
-      status: 'pending',
+      flow: 'onramp',
+      status: 'created',
       amountUSD: Number(amountUSD),
-      amountNGN: await exchangeRateService.convertUSDToNGN(Number(amountUSD)),
+      amountNGN: amountNGN,
       description: `On-ramp ${amountUSD} USD`,
       reference: fiat_tx_ref,
-      metadata: { fiat_tx_ref }
+      metadata: { 
+        fiat_tx_ref,
+        amountUSD: Number(amountUSD),
+        amountNGN: amountNGN,
+        expiryMinutes: validatedExpiry
+      }
     });
 
-    // Create real Flutterwave V4 order
-    const order = await flutterwaveService.createOrder({
-      amount: tx.amountNGN,
+    // Create Flutterwave customer
+    const [firstName, ...lastNameParts] = (user.name || 'User').split(' ');
+    const lastName = lastNameParts.join(' ') || 'User';
+    
+    const customer = await flutterwaveService.createCustomer({
+      firstName,
+      lastName,
+      email: user.email
+    });
+
+    // Create dynamic virtual account
+    const virtualAccount = await flutterwaveService.createDynamicVirtualAccount({
+      reference: fiat_tx_ref,
+      customerId: customer.data.id,
+      amount: Math.round(amountNGN), // Flutterwave expects whole numbers
       currency: 'NGN',
-      tx_ref: fiat_tx_ref,
-      customer: {
-        email: req.user.email,
-        name: req.user.name
-      },
-      redirect_url: `${process.env.FRONTEND_URL || 'https://sendpay-five.vercel.app'}/dashboard`,
-      description: `Deposit ${tx.amountNGN} NGN to your SendPay account`
+      narration: `${user.name} - SendPay Deposit`,
+      expiryMinutes: validatedExpiry
     });
 
-    const hostedUrl = order.data?.checkout_url;
+    // Update transaction with virtual account details
+    await Transaction.findByIdAndUpdate(tx._id, {
+      status: 'credit_pending',
+      metadata: {
+        ...tx.metadata,
+        flutterwave_customer_id: customer.data.id,
+        flutterwave_virtual_account_id: virtualAccount.data.id,
+        virtual_account_number: virtualAccount.data.account_number,
+        bank_name: virtualAccount.data.account_bank_name,
+        expiry_datetime: virtualAccount.data.account_expiration_datetime,
+        virtual_account_created_at: new Date()
+      }
+    });
 
-    res.json({ success: true, data: { fiat_tx_ref, hostedUrl, transactionId: tx._id } });
+    res.json({ 
+      success: true, 
+      data: { 
+        transactionId: tx._id,
+        fiat_tx_ref,
+        virtualAccount: {
+          accountNumber: virtualAccount.data.account_number,
+          bankName: virtualAccount.data.account_bank_name,
+          amount: amountNGN,
+          currency: 'NGN',
+          expiry: virtualAccount.data.account_expiration_datetime,
+          reference: fiat_tx_ref,
+          narration: virtualAccount.data.note
+        }
+      } 
+    });
   } catch (error: any) {
-    console.error('Onramp initiate error:', error);
-    res.status(500).json({ success: false, message: 'Failed to initiate on-ramp', error: error.message });
+    console.error('PWBT onramp initiate error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to initiate PWBT on-ramp', 
+      error: error.message 
+    });
   }
 });
 
@@ -346,6 +470,44 @@ router.get('/transfer-fee', authenticateToken, async (req: Request, res: Respons
 });
 
 /**
+ * GET /api/flutterwave/virtual-account/:id/status
+ * Get virtual account status and charges
+ */
+router.get('/virtual-account/:id/status', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { page = 1 } = req.query;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Virtual account ID is required'
+      });
+    }
+
+    // Get charges for the virtual account
+    const charges = await flutterwaveService.getChargesForVirtualAccount(id, Number(page));
+
+    res.json({
+      success: true,
+      message: 'Virtual account status retrieved successfully',
+      data: {
+        virtualAccountId: id,
+        charges: charges.data || [],
+        meta: charges.meta || {}
+      }
+    });
+  } catch (error: unknown) {
+    console.error('Virtual account status retrieval error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve virtual account status',
+      error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : 'Internal server error'
+    });
+  }
+});
+
+/**
  * GET /api/flutterwave/balance
  * Get available balance
  */
@@ -379,35 +541,50 @@ router.post('/webhook', async (req: Request, res: Response) => {
       userAgent,
       ip: forwardedFor || realIp || req.connection.remoteAddress,
       headers: req.headers,
-      body: req.body,
       timestamp: new Date().toISOString()
     });
 
+    // Get raw body and signature for verification
+    const rawBody = req.body as Buffer;
+    const signature = req.headers['flutterwave-signature'] as string;
+    const secretHash = process.env.FLUTTERWAVE_SECRET_HASH;
 
-    const { event, data } = req.body;
-
-    // Verify webhook signature (recommended for production)
-    const signature = req.headers['verif-hash'];
-    const secret = process.env.FLUTTERWAVE_ENCRYPTION_KEY || process.env.FLUTTERWAVE_SECRET_HASH;
-    if (signature && secret) {
-      if (signature !== secret) {
-        console.warn('Invalid Flutterwave webhook signature');
+    // Verify webhook signature using HMAC-SHA256 (as per Flutterwave docs)
+    if (signature && secretHash) {
+      const isValid = isValidFlutterwaveWebhook(rawBody, signature, secretHash);
+      if (!isValid) {
+        console.warn('❌ Invalid Flutterwave webhook signature');
         return res.status(401).json({ error: 'Invalid signature' });
       }
+      console.log('✅ Webhook signature verified');
+    } else {
+      console.warn('⚠️ No signature or secret hash configured - webhook verification disabled');
     }
 
+    // Parse the JSON body manually since we're using raw body
+    let webhookData;
+    try {
+      webhookData = JSON.parse(rawBody.toString());
+    } catch (error) {
+      console.error('❌ Failed to parse webhook JSON:', error);
+      return res.status(400).json({ error: 'Invalid JSON' });
+    }
+
+    const { event, data } = webhookData;
+
     switch (event) {
-      case 'transfer.completed':
+      case 'transfer.disburse':
+      case 'transfer.completed': // Backward compatibility
         await handleTransferCompleted(data);
         // Attempt to complete on-chain withdrawal if we have mapping
         try {
           const reference = data?.reference; // expected sendpay_<withdrawalId>
           if (reference && typeof reference === 'string' && reference.startsWith('sendpay_')) {
             const withdrawalId = reference.slice(9);
-            // Generate real settlement proof signature
+            // Generate real settlement proof signature using official webhook structure
             const settlementData = {
-              fiat_tx_hash: String(data?.id || data?.tx_ref || reference),
-              settled_amount: String(data?.amount || '0'),
+              fiat_tx_hash: String(data?.id || reference), // Use transfer ID from webhook
+              settled_amount: String(data?.debit_information?.actual_debit_amount || data?.amount || '0'),
               timestamp: Math.floor(Date.now() / 1000)
             };
 
@@ -424,9 +601,12 @@ router.post('/webhook', async (req: Request, res: Response) => {
         }
         break;
       case 'charge.completed':
+        // Handle PWBT (Pay With Bank Transfer) success
+        await handlePWBTCompleted(data);
+        break;
       case 'payment.completed':
       case 'transfer.successful':
-        // Handle hosted pay/on-ramp success
+        // Handle other payment methods success
         try {
           const fiat_tx_ref = data?.tx_ref || data?.flw_ref || data?.reference;
           const amount = String(data?.amount || '0');
@@ -473,6 +653,22 @@ async function handleTransferCompleted(data: any) {
     });
     
     if (transaction) {
+      // Verify transaction with Flutterwave API (Best Practice)
+      const transactionId = data.id || data.transfer_id;
+      if (transactionId) {
+        const isValid = await verifyTransactionWithFlutterwave(
+          transactionId,
+          (transaction.metadata as any)?.ngnAmount,
+          'NGN',
+          data.reference
+        );
+        
+        if (!isValid) {
+          console.error('❌ Transaction verification failed - not updating status');
+          return;
+        }
+      }
+      
       // Update transaction status - Flutterwave payment completed
       await Transaction.findByIdAndUpdate(transaction._id, {
         status: 'payout_completed',
@@ -482,7 +678,8 @@ async function handleTransferCompleted(data: any) {
           flutterwave_completed_at: new Date(),
           webhookProcessed: true,
           processedAt: new Date(),
-          payoutCompletedBy: 'webhook'
+          payoutCompletedBy: 'webhook',
+          transactionVerified: true
         }
       });
       
@@ -548,6 +745,94 @@ async function handleTransferReversed(data: any) {
     console.log('✅ Reversed transaction updated successfully');
   } catch (error) {
     console.error('❌ Error updating transfer reversal:', error);
+  }
+}
+
+async function handlePWBTCompleted(data: any) {
+  try {
+    console.log('💰 PWBT charge completed:', data.reference);
+    
+    // Find transaction by reference (fiat_tx_ref)
+    const transaction = await Transaction.findOne({
+      'metadata.fiat_tx_ref': data.reference
+    });
+    
+    if (!transaction) {
+      console.log('⚠️ No transaction found for PWBT reference:', data.reference);
+      return;
+    }
+
+    // Verify transaction with Flutterwave API (Best Practice)
+    const chargeId = data.id;
+    if (chargeId) {
+      const verification = await flutterwaveService.verifyCharge(chargeId);
+      
+      if (!verification?.data) {
+        console.error('❌ PWBT verification failed - no data returned');
+        return;
+      }
+      
+      const charge = verification.data;
+      
+      // Verify expected values
+      if (charge.status !== 'succeeded') {
+        console.error('❌ PWBT verification failed - status not succeeded:', charge.status);
+        return;
+      }
+      
+      if (charge.amount !== (transaction.metadata as any)?.amountNGN) {
+        console.error('❌ PWBT verification failed - amount mismatch:', {
+          expected: (transaction.metadata as any)?.amountNGN,
+          actual: charge.amount
+        });
+        return;
+      }
+      
+      if (charge.currency !== 'NGN') {
+        console.error('❌ PWBT verification failed - currency mismatch:', charge.currency);
+        return;
+      }
+      
+      console.log('✅ PWBT transaction verification passed');
+    }
+    
+    // Update transaction status - PWBT payment completed
+    await Transaction.findByIdAndUpdate(transaction._id, {
+      status: 'credited',
+      metadata: {
+        ...transaction.metadata,
+        flutterwave_charge_id: chargeId,
+        flutterwave_status: 'succeeded',
+        pwbt_completed_at: new Date(),
+        webhookProcessed: true,
+        processedAt: new Date(),
+        pwbtCompletedBy: 'webhook',
+        transactionVerified: true,
+        pwbt_amount: data.amount,
+        pwbt_currency: data.currency
+      }
+    });
+    
+    // Trigger on-chain deposit and credit
+    try {
+      const user = await transaction.populate('userId');
+      if (user && (user as any).userId?.walletAddress) {
+        const walletAddress = (user as any).userId.walletAddress;
+        const amount = String(data.amount);
+        const fiat_tx_ref = data.reference;
+        
+        await starknetService.depositAndCredit(walletAddress, amount, fiat_tx_ref);
+        console.log('✅ On-chain deposit initiated for PWBT:', fiat_tx_ref);
+      } else {
+        console.log('⚠️ No wallet address found for user in PWBT transaction');
+      }
+    } catch (e) {
+      console.error('❌ On-chain deposit error for PWBT:', e);
+    }
+    
+    console.log('✅ PWBT transaction updated successfully:', transaction.reference);
+  } catch (error) {
+    console.error('❌ Error updating PWBT completion:', error);
   }
 }
 

@@ -358,18 +358,19 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
                 return;
               }
 
-              const reference = `sendpay_${withdrawalId}`;
+              // Create alphanumeric reference for Flutterwave V4
+              const alphanumericRef = `sendpay${withdrawalId}${Date.now()}`.replace(/[^a-zA-Z0-9]/g, '');
 
               const transfer =
                 await flutterwaveService.createDirectTransfer({
                   bankCode: bank.bankCode,
                   accountNumber: bank.accountNumber,
                   amountNGN: ngnAmount,
-                  reference,
-                  narration: `SendPay withdrawal ${reference}`,
+                  reference: alphanumericRef,
+                  narration: `SendPay withdrawal ${withdrawalId}`,
                   callback_url:
                     process.env.FLUTTERWAVE_CALLBACK_URL || undefined,
-                  idempotencyKey: reference,
+                  idempotencyKey: alphanumericRef,
                 });
 
               await Transaction.findByIdAndUpdate(pendingTx._id, {
@@ -378,7 +379,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
                   metadata: {
                     ...(pendingTx.metadata as any),
                     flutterwave_reference:
-                      transfer?.data?.reference || reference,
+                      transfer?.data?.reference || alphanumericRef,
                     flutterwave_transfer_id: transfer?.data?.id || null,
                     ngnAmount,
                     usdAmount,
@@ -394,6 +395,11 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
                 err
               );
               
+              // Log detailed error information
+              if (err.response?.data) {
+                useLogger().error("[sendpay.indexer] Flutterwave error details:", err.response.data);
+              }
+              
               // Mark transaction as failed if payout initiation fails
               await Transaction.findByIdAndUpdate(pendingTx._id, {
                 $set: {
@@ -402,6 +408,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
                     ...(pendingTx.metadata as any),
                     error: "Payout initiation failed",
                     errorDetails: err instanceof Error ? err.message : String(err),
+                    flutterwaveError: err.response?.data || null,
                     payoutFailedAt: new Date(),
                   },
                 },

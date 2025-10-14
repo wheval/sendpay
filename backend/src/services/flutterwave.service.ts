@@ -8,40 +8,6 @@ interface FlutterwaveAuthToken {
   expiresAt: number;
 }
 
-interface FlutterwavePayoutRequest {
-  account_bank: string;
-  account_number: string;
-  amount: number;
-  narration: string;
-  currency: string;
-  reference: string;
-  beneficiary_name: string;
-}
-
-interface FlutterwavePayoutResponse {
-  status: string;
-  message: string;
-  data: {
-    id: number;
-    account_number: string;
-    bank_code: string;
-    full_name: string;
-    created_at: string;
-    currency: string;
-    debit_currency: string;
-    amount: number;
-    fee: number;
-    status: string;
-    reference: string;
-    meta: any;
-    narration: string;
-    approver: string;
-    complete_message: string;
-    requires_approval: number;
-    is_approved: number;
-    bank_name: string;
-  };
-}
 
 export class FlutterwaveService {
   private clientId: string;
@@ -59,7 +25,7 @@ export class FlutterwaveService {
     if (this.isTestMode) {
       this.baseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://developersandbox-api.flutterwave.com';
     } else {
-      this.baseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://api.flutterwave.cloud/f4bexperience';
+      this.baseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://f4bexperience.flutterwave.com';
     }
 
     if (!this.clientId || !this.clientSecret) {
@@ -125,52 +91,19 @@ export class FlutterwaveService {
   }
 
   /**
-   * Initiate a bank transfer payout
+   * Generate unique idempotency key
    */
-  async initiatePayout(payoutData: {
-    bankCode: string;
-    accountNumber: string;
-    amount: number;
-    beneficiaryName: string;
-    narration: string;
-    reference: string;
-  }): Promise<FlutterwavePayoutResponse> {
-    if (!this.clientId || !this.clientSecret) {
-      throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET environment variables.');
-    }
-
-    console.log('[fw] Initiating payout:', {
-      bankCode: payoutData.bankCode,
-      accountNumber: payoutData.accountNumber,
-      amount: payoutData.amount,
-      beneficiaryName: payoutData.beneficiaryName,
-      reference: payoutData.reference
-    });
-
-    const payload: FlutterwavePayoutRequest = {
-      account_bank: payoutData.bankCode,
-      account_number: payoutData.accountNumber,
-      amount: payoutData.amount,
-      narration: payoutData.narration,
-      currency: 'NGN',
-      reference: payoutData.reference,
-      beneficiary_name: payoutData.beneficiaryName
-    };
-
-    const response = await axios.post(
-      `${this.baseUrl}/transfers`,
-      payload,
-      {
-        headers: {
-          ...(await this.getAuthHeader()),
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    console.log('[fw] Payout response:', response.data);
-    return response.data;
+  private generateIdempotencyKey(): string {
+    return `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
   }
+
+  /**
+   * Generate unique trace ID
+   */
+  private generateTraceId(): string {
+    return `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+  }
+
 
   /**
    * Direct Transfers API (new): create bank payout with NGN source
@@ -222,8 +155,8 @@ export class FlutterwaveService {
         headers: {
           ...(await this.getAuthHeader()),
           'Content-Type': 'application/json',
-          ...(params.traceId ? { 'X-Trace-Id': params.traceId } : {}),
-          ...(params.idempotencyKey ? { 'X-Idempotency-Key': params.idempotencyKey } : {}),
+          'X-Trace-Id': params.traceId || this.generateTraceId(),
+          'X-Idempotency-Key': params.idempotencyKey || this.generateIdempotencyKey(),
         },
       },
     );
@@ -327,149 +260,169 @@ export class FlutterwaveService {
     }
   }
 
+
   /**
-   * V4: Create order for bank transfer payment (on-ramp)
+   * Create a customer for PWBT
    */
-  async createOrder(orderData: {
-    amount: number;
-    currency: string;
-    customer: { email: string; name: string; phone?: string };
-    tx_ref: string;
-    redirect_url: string;
-    description?: string;
+  async createCustomer(customerData: {
+    firstName: string;
+    lastName: string;
+    email: string;
   }): Promise<any> {
     if (!this.clientId || !this.clientSecret) {
       throw new Error('Flutterwave credentials not configured.');
     }
 
-    console.log('[fw] Creating order for bank transfer:', {
-      amount: orderData.amount,
-      tx_ref: orderData.tx_ref
+    console.log('[fw] Creating customer:', {
+      firstName: customerData.firstName,
+      lastName: customerData.lastName,
+      email: customerData.email
     });
 
     try {
       const response = await axios.post(
-        `${this.baseUrl}/orders`,
+        `${this.baseUrl}/customers`,
         {
-          amount: orderData.amount,
-          currency: orderData.currency,
-          customer: orderData.customer,
-          tx_ref: orderData.tx_ref,
-          redirect_url: orderData.redirect_url,
-          description: orderData.description || 'SendPay On-Ramp Deposit',
-          meta: { source: 'sendpay-onramp', payment_type: 'account' } // Specify bank transfer
+          name: {
+            first: customerData.firstName,
+            last: customerData.lastName
+          },
+          email: customerData.email
         },
         {
           headers: {
             ...(await this.getAuthHeader()),
             'Content-Type': 'application/json',
-            'X-Trace-Id': `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+            'Accept': 'application/json',
+            'X-Idempotency-Key': this.generateIdempotencyKey(),
+            'X-Trace-Id': this.generateTraceId()
           }
         }
       );
 
-      console.log('[fw] Order created:', response.data);
+      console.log('[fw] Customer created:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('[fw] Order creation error:', error.response?.data || error.message);
-      throw new Error(`Failed to create order: ${error.message}`);
+      console.error('[fw] Customer creation error:', error.response?.data || error.message);
+      throw new Error(`Failed to create customer: ${error.message}`);
     }
   }
 
   /**
-   * V4: Process bank transfer payment
+   * Create a dynamic virtual account for PWBT
    */
-  async processBankTransferPayment(orderId: string): Promise<any> {
+  async createDynamicVirtualAccount(params: {
+    reference: string;
+    customerId: string;
+    amount: number;
+    currency?: string;
+    narration?: string;
+    expiryMinutes?: number; // Default 60 minutes (1 hour)
+  }): Promise<any> {
     if (!this.clientId || !this.clientSecret) {
       throw new Error('Flutterwave credentials not configured.');
     }
 
-    console.log('[fw] Processing bank transfer for order:', { orderId });
+    const expirySeconds = (params.expiryMinutes || 60) * 60; // Convert minutes to seconds
+
+    console.log('[fw] Creating dynamic virtual account:', {
+      reference: params.reference,
+      customerId: params.customerId,
+      amount: params.amount,
+      expiryMinutes: params.expiryMinutes || 60
+    });
 
     try {
       const response = await axios.post(
-        `${this.baseUrl}/payments/account`,
+        `${this.baseUrl}/virtual-accounts`,
         {
-          order_id: orderId
+          reference: params.reference,
+          customer_id: params.customerId,
+          amount: params.amount,
+          currency: params.currency || 'NGN',
+          account_type: 'dynamic',
+          narration: params.narration || 'SendPay Deposit',
+          expiry: expirySeconds
         },
         {
           headers: {
             ...(await this.getAuthHeader()),
             'Content-Type': 'application/json',
-            'X-Trace-Id': `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+            'X-Idempotency-Key': this.generateIdempotencyKey(),
+            'X-Trace-Id': this.generateTraceId()
           }
         }
       );
 
-      console.log('[fw] Bank transfer payment response:', response.data);
+      console.log('[fw] Dynamic virtual account created:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('[fw] Bank transfer payment error:', error.response?.data || error.message);
-      throw new Error(`Failed to process bank transfer: ${error.message}`);
+      console.error('[fw] Virtual account creation error:', error.response?.data || error.message);
+      throw new Error(`Failed to create virtual account: ${error.message}`);
     }
   }
 
   /**
-   * V4: Check payment status
+   * Verify a charge/transaction by ID
    */
-  async getPaymentStatus(transactionId: string): Promise<any> {
+  async verifyCharge(chargeId: string): Promise<any> {
     if (!this.clientId || !this.clientSecret) {
       throw new Error('Flutterwave credentials not configured.');
     }
 
-    console.log('[fw] Checking payment status:', { transactionId });
+    console.log('[fw] Verifying charge:', { chargeId });
 
     try {
       const response = await axios.get(
-        `${this.baseUrl}/payments/${transactionId}`,
+        `${this.baseUrl}/charges/${chargeId}`,
         {
           headers: {
             ...(await this.getAuthHeader()),
-            'Content-Type': 'application/json',
-            'X-Trace-Id': `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+            'Accept': 'application/json',
+            'X-Trace-Id': this.generateTraceId()
           }
         }
       );
 
-      console.log('[fw] Payment status response:', response.data);
+      console.log('[fw] Charge verification response:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('[fw] Payment status error:', error.response?.data || error.message);
-      throw new Error(`Failed to check payment status: ${error.message}`);
+      console.error('[fw] Charge verification error:', error.response?.data || error.message);
+      throw new Error(`Failed to verify charge: ${error.message}`);
     }
   }
 
   /**
-   * List available payment methods (optional for validation)
+   * Get charges for a virtual account
    */
-  async listPaymentMethods(params: { page?: number; size?: number } = {}): Promise<any> {
+  async getChargesForVirtualAccount(virtualAccountId: string, page?: number): Promise<any> {
     if (!this.clientId || !this.clientSecret) {
       throw new Error('Flutterwave credentials not configured.');
     }
 
-    console.log('[fw] Fetching payment methods:', { page: params.page || 1, size: params.size || 10 });
+    console.log('[fw] Getting charges for virtual account:', { virtualAccountId, page });
 
     try {
       const response = await axios.get(
-        `${this.baseUrl}/payment-methods`,
+        `${this.baseUrl}/charges`,
         {
           headers: {
             ...(await this.getAuthHeader()),
-            'Content-Type': 'application/json',
-            'X-Trace-Id': `sendpay-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
+            'Accept': 'application/json',
+            'X-Trace-Id': this.generateTraceId()
           },
           params: {
-            page: params.page || 1,
-            size: params.size || 10
+            virtual_account_id: virtualAccountId,
+            page: page || 1
           }
         }
       );
 
-      console.log('[fw] Payment methods response:', { count: response.data.data?.length || 0 });
+      console.log('[fw] Virtual account charges response:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('[fw] Payment methods fetch error:', error.response?.data || error.message);
-      throw new Error(`Failed to fetch payment methods: ${error.message}`);
+      console.error('[fw] Virtual account charges error:', error.response?.data || error.message);
+      throw new Error(`Failed to get virtual account charges: ${error.message}`);
     }
   }
 
