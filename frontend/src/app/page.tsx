@@ -22,15 +22,16 @@ export default function HomePage() {
 			{/* Hero Section */}
 			<section className="relative min-h-screen bg-background">
 				<Navigation landing />
-				<div className="relative top-20 left-0 py-20 px-4 sm:px-6 lg:px-8 h-full w-full">
-					<div className="container mx-auto text-center">
+				<div className="relative md:top-20 left-0 py-20 px-4 sm:px-6 lg:px-8 h-full w-full">
+					<div className="sm:container mx-auto text-center">
 						<h1 className="text-4xl sm:text-5xl lg:text-8xl font-light tracking-tight mb-6">
 							Crypto in. Cash out
 							{/* ↔ */}
-							<span className="text-primary block">Instantly</span>
+							<span className="text-primary block">Instantly</span> For Africa
 						</h1>
-						<p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
+						<p className="text-lg: sm:text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
 							Swap and cash out fast. Secure payouts straight to your local bank.
+							Cross-border Remitances, Enjoy the power of Starknet/Bitcoin, No fees, No ID, No hassle.
 						</p>
 						<div className="flex flex-col sm:flex-row gap-4 justify-center">
 							<Button asChild size="lg" className="text-lg px-8 py-6">

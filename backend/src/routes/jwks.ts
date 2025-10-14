@@ -23,15 +23,18 @@ function pemToJwk(pem: string, kid: string = 'sendpay-key-1') {
   }
 }
 
-router.get('/.well-known/jwks.json', (_req, res) => {
+// Helper: get the JWK from any source
+function getJwk() {
   // First try explicit JWKS JSON
   const jwksJson = process.env.JWT_JWKS_JSON;
   if (jwksJson) {
     try {
       const parsed = JSON.parse(jwksJson);
-      return res.json(parsed);
+      if (parsed.keys && parsed.keys.length > 0) {
+        return parsed.keys[0];
+      }
     } catch {
-      return res.status(500).json({ error: 'Invalid JWT_JWKS_JSON' });
+      throw new Error('Invalid JWT_JWKS_JSON');
     }
   }
 
@@ -39,29 +42,42 @@ router.get('/.well-known/jwks.json', (_req, res) => {
   const pub = process.env.JWT_PUBLIC_JWK;
   if (pub) {
     try {
-      const key = JSON.parse(pub);
-      return res.json({ keys: [key] });
+      return JSON.parse(pub);
     } catch {
-      return res.status(500).json({ error: 'Invalid JWT_PUBLIC_JWK' });
+      throw new Error('Invalid JWT_PUBLIC_JWK');
     }
   }
 
   // Finally, try to convert PEM to JWK
   const publicKeyPem = process.env.JWT_PUBLIC_KEY_PEM;
   if (publicKeyPem) {
-    try {
-      const jwk = pemToJwk(publicKeyPem);
-      if (jwk) {
-        return res.json({ keys: [jwk] });
-      }
-    } catch (error) {
-      console.error('Error generating JWK from PEM:', error);
+    const jwk = pemToJwk(publicKeyPem);
+    if (jwk) {
+      return jwk;
     }
   }
 
-  return res.status(500).json({ 
-    error: 'JWKS not configured. Set JWT_JWKS_JSON, JWT_PUBLIC_JWK, or JWT_PUBLIC_KEY_PEM.' 
-  });
+  throw new Error('JWK not configured. Set JWT_JWKS_JSON, JWT_PUBLIC_JWK, or JWT_PUBLIC_KEY_PEM.');
+}
+
+// Standard JWKS endpoint (returns { keys: [...] })
+router.get('/.well-known/jwks.json', (_req, res) => {
+  try {
+    const jwk = getJwk();
+    res.json({ keys: [jwk] });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Single JWK endpoint for jwt.io compatibility (returns just the JWK object)
+router.get('/.well-known/jwk.json', (_req, res) => {
+  try {
+    const jwk = getJwk();
+    res.json(jwk);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 export { router as jwksRoutes };

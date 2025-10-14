@@ -4,6 +4,7 @@ import { Document, Types } from 'mongoose';
 export interface IUser {
   _id?: string;
   email: string;
+  password?: string;
   name: string;
   phone?: string;
   chipiWalletAddress?: string;
@@ -12,6 +13,7 @@ export interface IUser {
   starknetNetwork?: 'sepolia' | 'mainnet';
   bankDetails: {
     bankName: string;
+    bankCode: string;
     accountNumber: string;
     accountName: string;
   };
@@ -75,6 +77,7 @@ export interface IStarknetConfig {
   chainId: string;
   contractAddress: string;
   usdcTokenAddress: string;
+  strkTokenAddress: string;
 }
 
 export interface IStarknetTransaction {
@@ -132,6 +135,7 @@ export interface IBankAccount {
 // Extended interfaces for Mongoose documents
 export interface IUserDocument extends Document {
   email: string;
+  password?: string;
   name: string;
   phone?: string;
   chipiWalletAddress?: string;
@@ -140,6 +144,7 @@ export interface IUserDocument extends Document {
   starknetNetwork?: 'sepolia' | 'mainnet';
   bankDetails: {
     bankName: string;
+    bankCode: string;
     accountNumber: string;
     accountName: string;
   };

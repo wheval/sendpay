@@ -16,11 +16,10 @@ export function ChipiProvider({ children }: ChipiProviderProps) {
   }
 
   return (
-    <ChipiClientProvider
-      apiPublicKey={apiKey}
-      environment={chipiEnv}
-    >
+    <ChipiClientProvider apiPublicKey={apiKey} environment={chipiEnv}>
       {children}
     </ChipiClientProvider>
   );
 }
+
+

@@ -57,22 +57,21 @@ export class FlutterwaveService {
     this.isTestMode = process.env.NODE_ENV !== 'production';
     
     if (this.isTestMode) {
-      this.baseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://api.flutterwave.cloud/developersandbox';
+      this.baseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://developersandbox-api.flutterwave.com';
     } else {
       this.baseUrl = process.env.FLUTTERWAVE_BASE_URL || 'https://api.flutterwave.cloud/f4bexperience';
     }
 
     if (!this.clientId || !this.clientSecret) {
-      console.warn('⚠️ FLUTTERWAVE_CLIENT_ID or FLUTTERWAVE_CLIENT_SECRET not set.');
+      console.error('❌ FLUTTERWAVE_CLIENT_ID or FLUTTERWAVE_CLIENT_SECRET not configured. Flutterwave services will not work.');
+    } else {
+      console.log('[fw] Flutterwave service initialized:', {
+        hasClientId: !!this.clientId,
+        hasClientSecret: !!this.clientSecret,
+        isTestMode: this.isTestMode,
+        baseUrl: this.baseUrl
+      });
     }
-    
-    // Log configuration for debugging
-    console.log('[fw] Flutterwave service configuration:', {
-      hasClientId: !!this.clientId,
-      hasClientSecret: !!this.clientSecret,
-      isTestMode: this.isTestMode,
-      baseUrl: this.baseUrl
-    });
   }
 
   /**
@@ -136,101 +135,176 @@ export class FlutterwaveService {
     narration: string;
     reference: string;
   }): Promise<FlutterwavePayoutResponse> {
-    try {
-      if (!this.clientId || !this.clientSecret) {
-        // Simulate payout in test mode
-        return this.simulatePayout(payoutData);
-      }
-
-      const payload: FlutterwavePayoutRequest = {
-        account_bank: payoutData.bankCode,
-        account_number: payoutData.accountNumber,
-        amount: payoutData.amount,
-        narration: payoutData.narration,
-        currency: 'NGN',
-        reference: payoutData.reference,
-        beneficiary_name: payoutData.beneficiaryName
-      };
-
-      const response = await axios.post(
-        `${this.baseUrl}/transfers`,
-        payload,
-        {
-          headers: {
-            ...(await this.getAuthHeader()),
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      return response.data;
-    } catch (error: any) {
-      console.error('Flutterwave payout error:', error.response?.data || error.message);
-      throw new Error(`Flutterwave payout failed: ${error.response?.data?.message || error.message}`);
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET environment variables.');
     }
+
+    console.log('[fw] Initiating payout:', {
+      bankCode: payoutData.bankCode,
+      accountNumber: payoutData.accountNumber,
+      amount: payoutData.amount,
+      beneficiaryName: payoutData.beneficiaryName,
+      reference: payoutData.reference
+    });
+
+    const payload: FlutterwavePayoutRequest = {
+      account_bank: payoutData.bankCode,
+      account_number: payoutData.accountNumber,
+      amount: payoutData.amount,
+      narration: payoutData.narration,
+      currency: 'NGN',
+      reference: payoutData.reference,
+      beneficiary_name: payoutData.beneficiaryName
+    };
+
+    const response = await axios.post(
+      `${this.baseUrl}/transfers`,
+      payload,
+      {
+        headers: {
+          ...(await this.getAuthHeader()),
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('[fw] Payout response:', response.data);
+    return response.data;
+  }
+
+  /**
+   * Direct Transfers API (new): create bank payout with NGN source
+   */
+  async createDirectTransfer(params: {
+    bankCode: string;
+    accountNumber: string;
+    amountNGN: number; // value applies to destination_currency
+    reference: string;
+    narration: string;
+    callback_url?: string;
+    sender?: { name?: string; phone?: string; email?: string };
+    traceId?: string;
+    idempotencyKey?: string;
+  }): Promise<any> {
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET');
+    }
+
+    const payload: any = {
+      action: 'instant',
+      type: 'bank',
+      callback_url: params.callback_url,
+      narration: params.narration,
+      reference: params.reference,
+      payment_instruction: {
+        amount: {
+          value: params.amountNGN,
+          applies_to: 'destination_currency',
+        },
+        source_currency: 'NGN',
+        destination_currency: 'NGN',
+        recipient: {
+          bank: {
+            code: params.bankCode,
+            account_number: params.accountNumber,
+          },
+        },
+      },
+    };
+    if (params.sender) {
+      payload.sender = { name: params.sender.name, phone: params.sender.phone, email: params.sender.email };
+    }
+
+    const response = await axios.post(
+      `${this.baseUrl}/direct-transfers`,
+      payload,
+      {
+        headers: {
+          ...(await this.getAuthHeader()),
+          'Content-Type': 'application/json',
+          ...(params.traceId ? { 'X-Trace-Id': params.traceId } : {}),
+          ...(params.idempotencyKey ? { 'X-Idempotency-Key': params.idempotencyKey } : {}),
+        },
+      },
+    );
+    return response.data;
+  }
+
+  async getDirectTransfer(transferId: string): Promise<any> {
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET');
+    }
+    const response = await axios.get(
+      `${this.baseUrl}/transfers/${transferId}`,
+      { headers: await this.getAuthHeader() },
+    );
+    return response.data;
   }
 
   /**
    * Verify payout status
    */
   async verifyPayout(transferId: number): Promise<any> {
-    try {
-      if (!this.clientId || !this.clientSecret) {
-        return this.simulatePayoutVerification(transferId);
-      }
-
-      const response = await axios.get(
-        `${this.baseUrl}/transfers/${transferId}`,
-        {
-          headers: await this.getAuthHeader()
-        }
-      );
-
-      return response.data;
-    } catch (error: any) {
-      console.error('Flutterwave verification error:', error.response?.data || error.message);
-      throw new Error(`Flutterwave verification failed: ${error.response?.data?.message || error.message}`);
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET environment variables.');
     }
+
+    console.log('[fw] Verifying payout status for transfer ID:', transferId);
+
+    const response = await axios.get(
+      `${this.baseUrl}/transfers/${transferId}`,
+      {
+        headers: await this.getAuthHeader()
+      }
+    );
+
+    console.log('[fw] Payout verification response:', response.data);
+    return response.data;
   }
 
   /**
    * Get bank list for Nigeria
    */
   async getBankList(): Promise<any[]> {
-    try {
-      if (!this.clientId || !this.clientSecret) {
-        return this.getMockBankList();
-      }
-
-      const response = await axios.get(
-        `${this.baseUrl}/banks/NG`,
-        {
-          headers: await this.getAuthHeader()
-        }
-      );
-
-      return response.data.data || [];
-    } catch (error: any) {
-      console.error('Flutterwave bank list error:', error.response?.data || error.message);
-      // Return mock data if API fails
-      return this.getMockBankList();
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET environment variables.');
     }
+
+    console.log('[fw] Fetching bank list for Nigeria...');
+
+    const response = await axios.get(
+      `${this.baseUrl}/banks`,
+      {
+        headers: await this.getAuthHeader(),
+        params: {
+          country: 'NG'
+        }
+      }
+    );
+
+    console.log('[fw] Bank list response:', { count: response.data.data?.length || 0 });
+    return response.data.data || [];
   }
 
   /**
-   * Verify bank account number
+   * Verify bank account number using Flutterwave Bank Account Look Up API
    */
   async verifyBankAccount(bankCode: string, accountNumber: string): Promise<any> {
-    try {
-      if (!this.clientId || !this.clientSecret) {
-        return this.simulateAccountVerification(bankCode, accountNumber);
-      }
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET environment variables.');
+    }
 
+    console.log('[fw] Verifying bank account:', { bankCode, accountNumber });
+
+    try {
       const response = await axios.post(
-        `${this.baseUrl}/accounts/resolve`,
+        `${this.baseUrl}/banks/account-resolve`,
         {
-          account_number: accountNumber,
-          account_bank: bankCode
+          currency: 'NGN',
+          account: {
+            code: bankCode,
+            number: accountNumber
+          }
         },
         {
           headers: {
@@ -240,103 +314,69 @@ export class FlutterwaveService {
         }
       );
 
+      console.log('[fw] Bank account verification response:', response.data);
       return response.data;
     } catch (error: any) {
-      console.error('Flutterwave account verification error:', error.response?.data || error.message);
-      throw new Error(`Account verification failed: ${error.response?.data?.message || error.message}`);
+      console.error('[fw] Bank account verification error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers
+      });
+      throw error;
     }
   }
 
-  /**
-   * Simulate payout for testing
-   */
-  private simulatePayout(payoutData: any): FlutterwavePayoutResponse {
-    console.log('🧪 Simulating Flutterwave payout:', payoutData);
-    
-    return {
-      status: 'success',
-      message: 'Transfer initiated successfully',
-      data: {
-        id: Math.floor(Math.random() * 1000000),
-        account_number: payoutData.accountNumber,
-        bank_code: payoutData.bankCode,
-        full_name: payoutData.beneficiaryName,
-        created_at: new Date().toISOString(),
-        currency: 'NGN',
-        debit_currency: 'NGN',
-        amount: payoutData.amount,
-        fee: 0,
-        status: 'PENDING',
-        reference: payoutData.reference,
-        meta: {},
-        narration: payoutData.narration,
-        approver: 'System',
-        complete_message: 'Transfer initiated successfully',
-        requires_approval: 0,
-        is_approved: 1,
-        bank_name: 'Test Bank'
-      }
-    };
-  }
 
   /**
-   * Simulate payout verification for testing
+   * Create hosted payment link for on-ramp
    */
-  private simulatePayoutVerification(transferId: number): any {
-    return {
-      status: 'success',
-      message: 'Transfer details retrieved',
-      data: {
-        id: transferId,
-        status: 'SUCCESSFUL',
-        complete_message: 'Transfer completed successfully'
-      }
+  async createHostedPayment(paymentData: {
+    amount: number;
+    currency: string;
+    tx_ref: string;
+    customer: {
+      email: string;
+      name: string;
     };
-  }
-
-  /**
-   * Get mock bank list for testing
-   */
-  private getMockBankList(): any[] {
-    return [
-      { id: 1, code: '044', name: 'Access Bank' },
-      { id: 2, code: '023', name: 'Citibank Nigeria' },
-      { id: 3, code: '063', name: 'Diamond Bank' },
-      { id: 4, code: '050', name: 'Ecobank Nigeria' },
-      { id: 5, code: '070', name: 'Fidelity Bank' },
-      { id: 6, code: '011', name: 'First Bank of Nigeria' },
-      { id: 7, code: '214', name: 'First City Monument Bank' },
-      { id: 8, code: '058', name: 'Guaranty Trust Bank' },
-      { id: 9, code: '030', name: 'Heritage Bank' },
-      { id: 10, code: '301', name: 'Jaiz Bank' },
-      { id: 11, code: '082', name: 'Keystone Bank' },
-      { id: 12, code: '014', name: 'MainStreet Bank' },
-      { id: 13, code: '076', name: 'Polaris Bank' },
-      { id: 14, code: '221', name: 'Stanbic IBTC Bank' },
-      { id: 15, code: '068', name: 'Standard Chartered Bank' },
-      { id: 16, code: '232', name: 'Sterling Bank' },
-      { id: 17, code: '100', name: 'Suntrust Bank' },
-      { id: 18, code: '032', name: 'Union Bank of Nigeria' },
-      { id: 19, code: '033', name: 'United Bank for Africa' },
-      { id: 20, code: '215', name: 'Unity Bank' },
-      { id: 21, code: '035', name: 'Wema Bank' },
-      { id: 22, code: '057', name: 'Zenith Bank' }
-    ];
-  }
-
-  /**
-   * Simulate account verification for testing
-   */
-  private simulateAccountVerification(bankCode: string, accountNumber: string): any {
-    return {
-      status: 'success',
-      message: 'Account resolved successfully',
-      data: {
-        account_number: accountNumber,
-        account_name: 'Test Account Holder',
-        bank_id: 1
-      }
+    customizations: {
+      title: string;
+      description: string;
     };
+  }): Promise<string> {
+    try {
+      if (!this.clientId || !this.clientSecret) {
+        throw new Error('Flutterwave credentials not configured. Set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET environment variables.');
+      }
+
+      const response = await axios.post(
+        'https://api.flutterwave.com/v3/payments',
+        {
+          tx_ref: paymentData.tx_ref,
+          amount: paymentData.amount,
+          currency: paymentData.currency,
+          redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success`,
+          customer: paymentData.customer,
+          customizations: paymentData.customizations,
+          payment_plan: null
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.clientSecret}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data.status === 'success') {
+        return response.data.data.link;
+      } else {
+        throw new Error(`Flutterwave API error: ${response.data.message}`);
+      }
+    } catch (error: any) {
+      console.error('Flutterwave hosted payment error:', error.response?.data || error.message);
+      throw new Error(`Failed to create hosted payment: ${error.message}`);
+    }
   }
 
   /**
@@ -346,7 +386,11 @@ export class FlutterwaveService {
     return {
       isConfigured: !!(this.clientId && this.clientSecret),
       isTestMode: this.isTestMode,
-      baseUrl: this.baseUrl
+      baseUrl: this.baseUrl,
+      hasCredentials: {
+        clientId: !!this.clientId,
+        clientSecret: !!this.clientSecret
+      }
     };
   }
 }

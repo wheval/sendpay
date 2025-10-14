@@ -13,6 +13,7 @@ import { starknetRoutes } from './routes/starknet';
 import { jwksRoutes } from './routes/jwks';
 // import { cavosRoutes } from './routes/cavos'; // Removed - migrated to ChipiPay
 import { chipiPayRoutes } from './routes/chipipay';
+import { withdrawalRoutes } from './routes/withdrawal';
 import { flutterwaveRoutes } from './routes/flutterwave';
 
 const app = express();
@@ -63,6 +64,7 @@ app.use('/api/transaction', transactionRoutes);
 app.use('/api/starknet', starknetRoutes);
 // app.use('/api/cavos', cavosRoutes); // Removed - migrated to ChipiPay
 app.use('/api/chipipay', chipiPayRoutes);
+app.use('/api/withdrawal', withdrawalRoutes);
 app.use('/api/flutterwave', flutterwaveRoutes);
 app.use('/', jwksRoutes);
 

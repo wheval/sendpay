@@ -36,46 +36,7 @@ router.get('/network-info', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /api/starknet/balance/:address
- * Get USDC balance for a wallet address
- */
-router.get('/balance/:address', async (req: Request, res: Response) => {
-  try {
-    const { address } = req.params;
-
-    if (!starknetService.isValidAddress(address)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid Starknet address format'
-      });
-    }
-
-    const balance = await starknetService.getUSDCBalance(address);
-    const exchangeRate = await exchangeRateService.getUSDToNGNRate();
-    const balanceNGN = await exchangeRateService.convertUSDToNGN(balance);
-
-    res.json({
-      success: true,
-      message: 'Balance retrieved successfully',
-      data: {
-        address,
-        balanceUSD: balance,
-        balanceNGN,
-        exchangeRate,
-        tokenAddress: starknetService.getUSDCAddress()
-      }
-    });
-
-  } catch (error: any) {
-    console.error('Balance retrieval error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve balance',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-    });
-  }
-});
+// Removed redundant balance endpoint; use /api/chipipay/balance instead
 
 /**
  * GET /api/starknet/transaction/:hash
@@ -110,72 +71,6 @@ router.get('/transaction/:hash', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * POST /api/starknet/withdraw
- * Initiate withdrawal to bank account (protected route)
- */
-router.post('/withdraw', authenticateToken, async (req: Request, res: Response) => {
-  try {
-    const { amount, bankAccountId, description } = req.body;
-    const userId = req.user._id;
-
-    if (!amount || !bankAccountId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Amount and bank account ID are required'
-      });
-    }
-
-    if (amount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Amount must be greater than 0'
-      });
-    }
-
-    // Check user balance
-    if (req.user.balanceUSD < amount) {
-      return res.status(400).json({
-        success: false,
-        message: 'Insufficient balance'
-      });
-    }
-
-    // Get exchange rate and convert to NGN
-    const exchangeRate = await exchangeRateService.getUSDToNGNRate();
-    const amountNGN = await exchangeRateService.convertUSDToNGN(amount);
-
-    // In production, this would:
-    // 1. Call the smart contract to initiate withdrawal
-    // 2. Update user balance
-    // 3. Create transaction record
-    // 4. Integrate with Paystack/Flutterwave for fiat off-ramp
-
-    // For MVP, we'll simulate the process
-    const mockStarknetTxHash = `0x${Math.random().toString(16).substring(2, 34)}`;
-
-    res.json({
-      success: true,
-      message: 'Withdrawal initiated successfully',
-      data: {
-        amountUSD: amount,
-        amountNGN,
-        exchangeRate,
-        starknetTxHash: mockStarknetTxHash,
-        estimatedArrival: '2-3 business days',
-        status: 'pending'
-      }
-    });
-
-  } catch (error: any) {
-    console.error('Withdrawal initiation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to initiate withdrawal',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-    });
-  }
-});
 
 /**
  * GET /api/starknet/exchange-rate

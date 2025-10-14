@@ -7,7 +7,8 @@ export function cn(...inputs: ClassValue[]) {
 
 export const normalizeHex = (addr: string): string => {
   if (!addr) return ''
-  // Remove 0x prefix, normalize to lowercase, then add 0x back
-  const cleanAddr = addr.toLowerCase().replace(/^0x/, '')
-  return '0x' + cleanAddr
+  let clean = addr.toLowerCase().replace(/^0x/, '').replace(/[^0-9a-f]/g, '')
+  if (clean.length > 64) clean = clean.slice(-64)
+  if (clean.length < 64) clean = clean.padStart(64, '0')
+  return '0x' + clean
 }
