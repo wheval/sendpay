@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { X } from "lucide-react";
 
 interface EnterPinModalProps {
   open: boolean;
@@ -69,7 +70,7 @@ export function EnterPinModal({
         <div className="p-6 space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">{title}</h2>
-            <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0">×</Button>
+            <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0"><X className="h-4 w-4" /></Button>
           </div>
 
           <p className="text-xs text-muted-foreground">{description}</p>

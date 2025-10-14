@@ -1,5 +1,6 @@
 import mongoose, { Schema } from 'mongoose';
 import { IUser, IUserDocument } from '../types';
+import { STARKNET_NETWORK } from '../lib/constants';
 
 
 const UserSchema = new Schema<IUserDocument>({
@@ -44,7 +45,7 @@ const UserSchema = new Schema<IUserDocument>({
   starknetNetwork: {
     type: String,
     enum: ['sepolia', 'mainnet'],
-    default: 'sepolia',
+    default: STARKNET_NETWORK,
     required: false
   },
   bankDetails: {

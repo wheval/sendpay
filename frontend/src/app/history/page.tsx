@@ -9,23 +9,33 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/lib/api"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Search, Filter, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { ArrowLeft, Search, Download, Eye, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react"
 import { cookies } from "@/lib/cookies"
 
 interface Transaction {
   id: string
-  type: 'received' | 'withdrawn' | 'transfer'
+  flow: 'onramp' | 'offramp'
   amountUSD: number
   amountNGN: number
   description: string
-  status: 'pending' | 'completed' | 'failed' | 'cancelled'
+  status:
+    | 'created'
+    | 'signed'
+    | 'submitted_onchain'
+    | 'event_emitted'
+    | 'payout_pending'
+    | 'payout_completed'
+    | 'payout_failed'
+    | 'credit_pending'
+    | 'credited'
+    | 'credit_failed'
   createdAt: string
   updatedAt: string
   reference?: string
-  bankAccount?: {
-    bankName: string
-    accountNumber: string
-    accountName: string
+  bankDetails?: {
+    bankName?: string
+    accountNumber?: string
+    accountName?: string
   }
 }
 
@@ -76,7 +86,7 @@ export default function HistoryPage() {
         } else {
           setSummary(null)
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         setTransactions([])
         setSummary(null)
         if (!err?.message?.includes('404')) {
@@ -90,11 +100,48 @@ export default function HistoryPage() {
     checkAuth()
   }, [router])
 
+  const isPendingGroup = (status: Transaction['status']) => (
+    [
+      'created',
+      'signed',
+      'submitted_onchain',
+      'event_emitted',
+      'payout_pending',
+      'credit_pending',
+    ] as Transaction['status'][]
+  ).includes(status)
+
+  const isCompletedGroup = (status: Transaction['status']) => (
+    [
+      'credited',
+      'payout_completed',
+    ] as Transaction['status'][]
+  ).includes(status)
+
+  const isFailedGroup = (status: Transaction['status']) => (
+    [
+      'credit_failed',
+      'payout_failed',
+    ] as Transaction['status'][]
+  ).includes(status)
+
   const filteredTransactions = (Array.isArray(transactions) ? transactions : []).filter(transaction => {
     const matchesSearch = transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          transaction.reference?.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === "all" || transaction.status === statusFilter
-    const matchesType = typeFilter === "all" || transaction.type === typeFilter
+    const matchesStatus = (() => {
+      if (statusFilter === 'all') return true
+      if (statusFilter === 'pending') return isPendingGroup(transaction.status)
+      if (statusFilter === 'completed') return isCompletedGroup(transaction.status)
+      if (statusFilter === 'failed') return isFailedGroup(transaction.status)
+      if (statusFilter === 'cancelled') return false
+      return true
+    })()
+    const matchesType = (() => {
+      if (typeFilter === 'all') return true
+      if (typeFilter === 'received') return transaction.flow === 'onramp'
+      if (typeFilter === 'withdrawn') return transaction.flow === 'offramp'
+      return true
+    })()
     
     let matchesDate = true
     if (dateFilter !== "all") {
@@ -119,43 +166,27 @@ export default function HistoryPage() {
     return matchesSearch && matchesStatus && matchesType && matchesDate
   })
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <CheckCircle className="h-4 w-4 text-green-600" />
-      case 'failed':
-        return <XCircle className="h-4 w-4 text-red-600" />
-      case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-600" />
-      case 'cancelled':
-        return <XCircle className="h-4 w-4 text-gray-600" />
-      default:
-        return <AlertCircle className="h-4 w-4 text-blue-600" />
-    }
+  const getStatusIcon = (status: Transaction['status']) => {
+    if (isCompletedGroup(status)) return <CheckCircle className="h-4 w-4 text-green-600" />
+    if (isFailedGroup(status)) return <XCircle className="h-4 w-4 text-red-600" />
+    if (isPendingGroup(status)) return <Clock className="h-4 w-4 text-yellow-600" />
+    return <AlertCircle className="h-4 w-4 text-blue-600" />
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'text-green-600'
-      case 'failed':
-        return 'text-red-600'
-      case 'pending':
-        return 'text-yellow-600'
-      case 'cancelled':
-        return 'text-gray-600'
-      default:
-        return 'text-blue-600'
-    }
+  const getStatusColor = (status: Transaction['status']) => {
+    if (isCompletedGroup(status)) return 'text-green-600'
+    if (isFailedGroup(status)) return 'text-red-600'
+    if (isPendingGroup(status)) return 'text-yellow-600'
+    return 'text-blue-600'
   }
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'received':
+  const getTypeIcon = (flow: 'onramp' | 'offramp' | string) => {
+    switch (flow) {
+      case 'onramp':
         return <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
           <span className="text-green-600 font-bold text-sm">+</span>
         </div>
-      case 'withdrawn':
+      case 'offramp':
         return <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
           <span className="text-red-600 font-bold text-sm">-</span>
         </div>
@@ -430,7 +461,7 @@ export default function HistoryPage() {
                     key={transaction.id}
                     className="flex items-center space-x-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
                   >
-                    {getTypeIcon(transaction.type)}
+                    {getTypeIcon(transaction.flow)}
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
@@ -445,9 +476,9 @@ export default function HistoryPage() {
                               </>
                             )}
                           </div>
-                          {transaction.bankAccount && (
+                          {transaction.bankDetails && (
                             <p className="text-sm text-muted-foreground">
-                              {transaction.bankAccount.bankName} - {transaction.bankAccount.accountName}
+                              {transaction.bankDetails.bankName} - {transaction.bankDetails.accountName}
                             </p>
                           )}
                         </div>
@@ -456,7 +487,7 @@ export default function HistoryPage() {
                           <div className="flex items-center space-x-2">
                             <div className="text-right flex items-center gap-1">
                               <p className="font-medium">
-                                {transaction.type === 'withdrawn' ? '-' : '+'}
+                                {transaction.flow === 'offramp' ? '-' : '+'}
                                 {formatCurrency(transaction.amountUSD, 'USD')}
                               </p>
                               <p className="text-sm text-muted-foreground">
@@ -466,7 +497,7 @@ export default function HistoryPage() {
                           </div>
                           <p className={`text-sm font-medium flex items-center gap-1 capitalize ${getStatusColor(transaction.status)}`}>
                             {getStatusIcon(transaction.status)}
-                            {transaction.status}
+                            {String(transaction.status).replace(/_/g, ' ')}
                           </p>
                         </div>
                       </div>

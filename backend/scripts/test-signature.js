@@ -11,8 +11,7 @@
 */
 
 require('dotenv').config();
-const { ec } = require('elliptic');
-const { hash } = require('starknet');
+const { ec, hash } = require('starknet');
 const crypto = require('crypto');
 
 function asHexFelt(value) {
@@ -20,6 +19,7 @@ function asHexFelt(value) {
   if (typeof value === 'bigint') return '0x' + value.toString(16);
   if (typeof value === 'string') {
     if (value.startsWith('0x')) return value;
+    if (/^\d+$/.test(value)) return '0x' + BigInt(value).toString(16);
     return '0x' + Buffer.from(value).toString('hex');
   }
   throw new Error('Unsupported value type for felt conversion');
@@ -38,8 +38,7 @@ function argvFlag(name, fallback) {
 }
 
 async function main() {
-  const priv = process.env.SENDPAY_BACKEND_PRIVATE_KEY;
-  const pub = process.env.SENDPAY_BACKEND_PUBLIC_KEY;
+  const priv = (process.env.SENDPAY_BACKEND_PRIVATE_KEY || '').replace(/^0x/, '');
   if (!priv) {
     console.error('SENDPAY_BACKEND_PRIVATE_KEY not set');
     process.exit(1);
@@ -61,26 +60,34 @@ async function main() {
   const tokenF = asHexFelt(token);
   const txRefF = asHexFelt(tx_ref);
   const nonceF = asHexFelt(nonce);
-  const tsF = asHexFelt(timestamp);
+  // Domain values (must match contract)
+  const DOMAIN_VERSION = hash.getSelectorFromName('SENDPAY_V1');
+  const DOMAIN_PURPOSE = hash.getSelectorFromName('WITHDRAWAL_REQUEST');
+  const CONTRACT = asHexFelt(process.env.SENDPAY_CONTRACT_ADDRESS || '0x0');
+  const CHAIN_ID = (process.env.STARKNET_CHAIN_ID || 'SN_SEPOLIA').toUpperCase().includes('MAIN')
+    ? '0x534e5f4d41494e'
+    : '0x534e5f5345504f4c4941';
 
   const messageHash = hash.computePoseidonHashOnElements([
+    DOMAIN_VERSION,
+    DOMAIN_PURPOSE,
+    CONTRACT,
+    CHAIN_ID,
     userF,
     amountF,
     tokenF,
     txRefF,
     nonceF,
-    tsF,
   ]);
 
-  const e = new ec('secp256k1');
-  const keyPair = e.keyFromPrivate(priv, 'hex');
-  const sig = keyPair.sign(messageHash);
+  const pubKey = '0x' + ec.starkCurve.getStarkKey(priv);
+  const sig = ec.starkCurve.sign(messageHash, priv);
 
   const result = {
-    envPublicKey: pub || null,
+    derivedPublicKey: pubKey,
     request: { user, amount, token, tx_ref, nonce, timestamp },
     messageHash,
-    signature: { r: sig.r.toString('hex'), s: sig.s.toString('hex') },
+    signature: { r: '0x' + sig.r.toString(16), s: '0x' + sig.s.toString(16) },
   };
 
   console.log(JSON.stringify(result, null, 2));

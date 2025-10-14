@@ -11,16 +11,33 @@ import { flutterwaveService } from "../src/services/flutterwave.service";
 import { exchangeRateService } from "../src/services/exchange-rate.service";
 
 // Event selectors from SendPay ABI (using the correct event names from deployed contract)
+// Use fully-qualified Cairo event names from ABI for reliable selector matching
 const EVENT_SELECTORS = {
-  WithdrawalCreated: getSelector("WithdrawalCreated"),
-  WithdrawalCompleted: getSelector("WithdrawalCompleted"),
-  WithdrawalFailed: getSelector("WithdrawalFailed"),
-  DepositCompleted: getSelector("DepositCompleted"),
-  EmergencyPaused: getSelector("EmergencyPaused"),
-  EmergencyResumed: getSelector("EmergencyResumed"),
-  RoleChanged: getSelector("RoleChanged"),
-  PayoutToTreasury: getSelector("PayoutToTreasury"),
+  WithdrawalCreated: getSelector("sendpay::sendpay::WithdrawalCreated"),
+  WithdrawalCompleted: getSelector("sendpay::sendpay::WithdrawalCompleted"),
+  WithdrawalFailed: getSelector("sendpay::sendpay::WithdrawalFailed"),
+  DepositCompleted: getSelector("sendpay::sendpay::DepositCompleted"),
+  EmergencyPaused: getSelector("sendpay::sendpay::EmergencyPaused"),
+  EmergencyResumed: getSelector("sendpay::sendpay::EmergencyResumed"),
+  RoleChanged: getSelector("sendpay::sendpay::RoleChanged"),
+  PayoutToTreasury: getSelector("sendpay::sendpay::PayoutToTreasury"),
+  // OpenZeppelin AccessControl events (sometimes emitted by upgrades/roles)
+  OZ_RoleGranted: getSelector("openzeppelin_access::accesscontrol::accesscontrol::AccessControlComponent::RoleGranted"),
+  OZ_RoleGrantedWithDelay: getSelector("openzeppelin_access::accesscontrol::accesscontrol::AccessControlComponent::RoleGrantedWithDelay"),
+  OZ_RoleRevoked: getSelector("openzeppelin_access::accesscontrol::accesscontrol::AccessControlComponent::RoleRevoked"),
+  OZ_RoleAdminChanged: getSelector("openzeppelin_access::accesscontrol::accesscontrol::AccessControlComponent::RoleAdminChanged"),
+  OZ_AccessControlEvent: getSelector("openzeppelin_access::accesscontrol::accesscontrol::AccessControlComponent::Event"),
+  SENDPAY_Event: getSelector("sendpay::sendpay::Event"),
+  // Short names as emitted by some indexers/explorers
+  SHORT_RoleGranted: getSelector("RoleGranted"),
+  SHORT_RoleRevoked: getSelector("RoleRevoked"),
+  SHORT_RoleAdminChanged: getSelector("RoleAdminChanged"),
 };
+
+// Normalize to lowercase for robust comparisons
+const EVENT_SELECTORS_LC = Object.fromEntries(
+  Object.entries(EVENT_SELECTORS).map(([k, v]) => [k, String(v).toLowerCase()])
+) as Record<keyof typeof EVENT_SELECTORS, string>;
 
 function toHex(value: string | number | bigint): `0x${string}` {
   const n = BigInt(value);
@@ -71,8 +88,11 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
         { upsert: true }
       );
 
+      // (intentionally no block-level logs in production)
+
       for (const event of block.events) {
-        const selector = event.keys[0];
+        // Use the last key as the selector; some streams append the selector at the end
+        const selector = event.keys[event.keys.length - 1];
         const txHash = event.transactionHash;
         const logIndex = event.eventIndex;
 
@@ -80,8 +100,18 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
         let eventType = "Unknown";
         let eventData: any = {};
 
+        // Debug raw event info for local verification
+        useLogger().info("[sendpay.indexer] raw event", {
+          selector,
+          keysCount: event.keys?.length || 0,
+          txHash,
+          logIndex,
+        });
+
         // Determine event type and parse data based on actual ABI structure
-        if (selector === EVENT_SELECTORS.WithdrawalCreated) {
+        const selectorLc = String(selector).toLowerCase();
+
+        if (selectorLc === EVENT_SELECTORS_LC.WithdrawalCreated) {
           eventType = "WithdrawalCreated";
           // Data structure from ABI: withdrawal_id, user, amount, token_address, tx_ref, timestamp, block_number
           const withdrawalId = readU256(event.data as any, 0);
@@ -101,7 +131,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             timestamp,
             blockNumber
           };
-        } else if (selector === EVENT_SELECTORS.WithdrawalCompleted) {
+        } else if (selectorLc === EVENT_SELECTORS_LC.WithdrawalCompleted) {
           eventType = "WithdrawalCompleted";
           // Data structure from ABI: withdrawal_id, user, amount, token_address, tx_ref, timestamp, block_number
           const withdrawalId = readU256(event.data as any, 0);
@@ -121,7 +151,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             timestamp,
             blockNumber
           };
-        } else if (selector === EVENT_SELECTORS.WithdrawalFailed) {
+        } else if (selectorLc === EVENT_SELECTORS_LC.WithdrawalFailed) {
           eventType = "WithdrawalFailed";
           // Data structure from ABI: withdrawal_id, user, amount, token_address, tx_ref, timestamp, block_number
           const withdrawalId = readU256(event.data as any, 0);
@@ -141,7 +171,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             timestamp,
             blockNumber
           };
-        } else if (selector === EVENT_SELECTORS.DepositCompleted) {
+        } else if (selectorLc === EVENT_SELECTORS_LC.DepositCompleted) {
           eventType = "DepositCompleted";
           // Data structure from ABI: user, amount, token_address, fiat_tx_ref, timestamp
           const user = toHex(event.data[0] as any);
@@ -157,7 +187,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             fiatTxRef,
             timestamp
           };
-        } else if (selector === EVENT_SELECTORS.EmergencyPaused) {
+        } else if (selectorLc === EVENT_SELECTORS_LC.EmergencyPaused) {
           eventType = "EmergencyPaused";
           // Data structure from ABI: reason, timestamp
           const reason = event.data[0] as string;
@@ -167,7 +197,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             reason,
             timestamp
           };
-        } else if (selector === EVENT_SELECTORS.EmergencyResumed) {
+        } else if (selectorLc === EVENT_SELECTORS_LC.EmergencyResumed) {
           eventType = "EmergencyResumed";
           // Data structure from ABI: timestamp
           const timestamp = Number(event.data[0]);
@@ -175,21 +205,42 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
           eventData = {
             timestamp
           };
-        } else if (selector === EVENT_SELECTORS.RoleChanged) {
+        } else if (
+          selectorLc === EVENT_SELECTORS_LC.RoleChanged ||
+          selectorLc === String(EVENT_SELECTORS.OZ_RoleGranted).toLowerCase() ||
+          selectorLc === String(EVENT_SELECTORS.OZ_RoleGrantedWithDelay).toLowerCase() ||
+          selectorLc === String(EVENT_SELECTORS.OZ_RoleRevoked).toLowerCase() ||
+          selectorLc === String(EVENT_SELECTORS.OZ_RoleAdminChanged).toLowerCase() ||
+          selectorLc === String(EVENT_SELECTORS.SHORT_RoleGranted).toLowerCase() ||
+          selectorLc === String(EVENT_SELECTORS.SHORT_RoleRevoked).toLowerCase() ||
+          selectorLc === String(EVENT_SELECTORS.SHORT_RoleAdminChanged).toLowerCase()
+        ) {
           eventType = "RoleChanged";
-          // Data structure from ABI: role, old_admin, new_admin, timestamp
+          // Data: (role, account, sender)
           const role = event.data[0] as string;
-          const oldAdmin = toHex(event.data[1] as any);
-          const newAdmin = toHex(event.data[2] as any);
-          const timestamp = Number(event.data[3]);
-
-          eventData = {
-            role,
-            oldAdmin,
-            newAdmin,
-            timestamp
-          };
-        } else if (selector === EVENT_SELECTORS.PayoutToTreasury) {
+          const account = toHex(event.data[1] as any);
+          const sender = toHex((event.data[2] ?? event.data[1]) as any);
+          const timestamp = Number(event.data[3] ?? 0);
+          eventData = { role, account, sender, timestamp };
+        } else if (
+          selectorLc === String(EVENT_SELECTORS.OZ_AccessControlEvent).toLowerCase() ||
+          selectorLc === String(EVENT_SELECTORS.SENDPAY_Event).toLowerCase()
+        ) {
+          // Flat enum wrapper; some nodes emit only the outer enum selector and put the
+          // variant data in `data`. Heuristic: if data has 3 felts, it likely matches
+          // AccessControl (role, account, sender). Map it for observability.
+          if (Array.isArray(event.data) && event.data.length === 3) {
+            eventType = "RoleChanged";
+            eventData = {
+              role: event.data[0] as string,
+              account: toHex(event.data[1] as any),
+              sender: toHex(event.data[2] as any),
+              timestamp: 0
+            };
+          } else {
+            eventType = "Unknown";
+          }
+        } else if (selectorLc === EVENT_SELECTORS_LC.PayoutToTreasury) {
           eventType = "PayoutToTreasury";
           // Data structure from ABI: withdrawal_id, treasury_address, amount, token_address, timestamp
           const withdrawalId = readU256(event.data as any, 0);
@@ -206,6 +257,17 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             timestamp
           };
         }
+
+        // Log the classified event type and parsed data (trimmed) for local debugging
+        try {
+          useLogger().info("[sendpay.indexer] classified event", {
+            eventType,
+            txHash,
+            logIndex,
+            parsedKeys: Object.keys(eventData || {}),
+            dataLen: Array.isArray(event.data) ? event.data.length : 0,
+          });
+        } catch {}
 
         try {
           await ProcessedEvent.create({ 
@@ -227,8 +289,8 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
           // Find the pending transaction created by our backend signature step using tx_ref
           const pendingTx = await Transaction.findOne({ "metadata.txRef": txRef });
           if (pendingTx) {
-            // Save linkage and mark as fiat_processing
-            pendingTx.status = "pending";
+            // Save linkage and mark as payout pending
+            pendingTx.status = "payout_pending";
             pendingTx.metadata = {
               ...pendingTx.metadata,
               withdrawalId: withdrawalId,
@@ -261,7 +323,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
 
                   await Transaction.findByIdAndUpdate(pendingTx._id, {
                     $set: {
-                      status: "pending",
+                      status: "payout_pending",
                       metadata: {
                         ...(pendingTx.metadata as any),
                         flutterwave_reference: transfer?.data?.reference || reference,
@@ -282,7 +344,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             { "metadata.withdrawalId": withdrawalId },
             {
               $set: {
-                status: "completed",
+                status: "payout_completed",
                 metadata: { updatedAt: new Date(), event: "WithdrawalCompleted" },
               },
             }
@@ -294,7 +356,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             { "metadata.withdrawalId": withdrawalId },
             {
               $set: {
-                status: "failed",
+                status: "payout_failed",
                 metadata: { updatedAt: new Date(), event: "WithdrawalFailed" },
               },
             }
@@ -307,11 +369,11 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
           await Transaction.findOneAndUpdate(
             { "metadata.fiatTxRef": fiatTxRef },
             {
-              status: "completed",
+              status: "credited",
               starknetTxHash: txHash,
               $setOnInsert: {
                 description: "Deposit completed",
-                type: "deposited",
+                flow: "onramp",
                 amountUSD: Number(amount) / 1e6, // Convert from wei
                 amountNGN: 0,
                 userId: undefined,
@@ -336,7 +398,7 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
             { "metadata.withdrawalId": withdrawalId },
             {
               $set: {
-                status: "treasury_payout",
+                status: "payout_failed",
                 metadata: { 
                   ...eventData,
                   treasuryAddress,

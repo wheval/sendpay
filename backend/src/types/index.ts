@@ -28,10 +28,20 @@ export interface IUser {
 export interface ITransaction {
   _id?: string;
   userId: string | IUser;
-  type: 'received' | 'withdrawn';
+  flow: 'onramp' | 'offramp';
+  status:
+    | 'created'
+    | 'signed'
+    | 'submitted_onchain'
+    | 'event_emitted'
+    | 'payout_pending'
+    | 'payout_completed'
+    | 'payout_failed'
+    | 'credit_pending'
+    | 'credited'
+    | 'credit_failed';
   amountUSD: number;
   amountNGN: number;
-  status: 'pending' | 'completed' | 'failed';
   description: string;
   reference: string;
   starknetTxHash?: string;
@@ -157,10 +167,20 @@ export interface IUserDocument extends Document {
 
 export interface ITransactionDocument extends Document {
   userId: Types.ObjectId;
-  type: 'received' | 'withdrawn';
+  flow: 'onramp' | 'offramp';
+  status:
+    | 'created'
+    | 'signed'
+    | 'submitted_onchain'
+    | 'event_emitted'
+    | 'payout_pending'
+    | 'payout_completed'
+    | 'payout_failed'
+    | 'credit_pending'
+    | 'credited'
+    | 'credit_failed';
   amountUSD: number;
   amountNGN: number;
-  status: 'pending' | 'completed' | 'failed';
   description: string;
   reference: string;
   starknetTxHash?: string;

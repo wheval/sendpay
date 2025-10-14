@@ -7,9 +7,19 @@ const TransactionSchema = new Schema<ITransactionDocument>({
     ref: 'User',
     required: true
   },
-  type: {
+  flow: {
     type: String,
-    enum: ['received', 'withdrawn'],
+    enum: ['onramp', 'offramp'],
+    required: true
+  },
+  status: {
+    type: String,
+    enum: [
+      // offramp lifecycle
+      'created', 'signed', 'submitted_onchain', 'event_emitted', 'payout_pending', 'payout_completed', 'payout_failed',
+      // onramp lifecycle
+      'credit_pending', 'credited', 'credit_failed'
+    ],
     required: true
   },
   amountUSD: {
@@ -21,11 +31,6 @@ const TransactionSchema = new Schema<ITransactionDocument>({
     type: Number,
     required: true,
     min: 0
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'completed', 'failed'],
-    default: 'pending'
   },
   description: {
     type: String,
@@ -61,25 +66,25 @@ const TransactionSchema = new Schema<ITransactionDocument>({
 
 // Indexes for better query performance
 TransactionSchema.index({ userId: 1 });
-TransactionSchema.index({ type: 1 });
-TransactionSchema.index({ status: 1 });
+TransactionSchema.index({ flow: 1 });
+TransactionSchema.index({ status: 1, flow: 1 });
 TransactionSchema.index({ createdAt: -1 });
 TransactionSchema.index({ reference: 1 }, { unique: true });
 TransactionSchema.index({ starknetTxHash: 1 });
 
 // Virtual for formatted amounts
-TransactionSchema.virtual('formattedAmountUSD').get(function() {
-  return this.amountUSD.toFixed(2);
+TransactionSchema.virtual('formattedAmountUSD').get(function(this: any) {
+  return Number(this.amountUSD || 0).toFixed(2);
 });
 
-TransactionSchema.virtual('formattedAmountNGN').get(function() {
-  return this.amountNGN.toLocaleString();
+TransactionSchema.virtual('formattedAmountNGN').get(function(this: any) {
+  return Number(this.amountNGN || 0).toLocaleString();
 });
 
 // Virtual for transaction age
-TransactionSchema.virtual('age').get(function() {
+TransactionSchema.virtual('age').get(function(this: any) {
   const now = new Date();
-  const created = this.createdAt;
+  const created: Date | undefined = this.createdAt || this.get?.('createdAt');
   if (!created) return 'Unknown';
   
   const diffInHours = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60));

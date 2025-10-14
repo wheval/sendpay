@@ -55,13 +55,13 @@ router.post('/receive', authenticateToken, async (req: Request, res: Response) =
       amountUSD = await exchangeRateService.convertNGNToUSD(amount);
     }
 
-    // Create transaction record
+    // Create transaction record (onramp flow)
     const transaction = new Transaction({
       userId,
-      type: 'received',
+      flow: 'onramp',
       amountUSD,
       amountNGN,
-      status: 'pending',
+      status: 'credit_pending',
       description: description || `Payment request for ${amount} ${currency}`,
       reference,
       starknetTxHash: transactionHash
@@ -122,8 +122,8 @@ router.get('/:reference', optionalAuth, async (req: Request, res: Response) => {
       });
     }
 
-    // Check if payment is still pending
-    if (transaction.status !== 'pending') {
+    // Check if payment is still pending (onramp lifecycle)
+    if (transaction.status !== 'credit_pending') {
       return res.status(400).json({
         success: false,
         message: 'Payment request is no longer active',
@@ -188,7 +188,7 @@ router.post('/:reference/process', async (req: Request, res: Response) => {
       });
     }
 
-    if (transaction.status !== 'pending') {
+    if (transaction.status !== 'credit_pending') {
       return res.status(400).json({
         success: false,
         message: 'Payment request is no longer active'
@@ -217,10 +217,18 @@ router.get('/requests', authenticateToken, async (req: Request, res: Response) =
     const userId = req.user._id;
     const { status, limit = 10, page = 1 } = req.query;
 
-    const query: Record<string, unknown> = { userId, type: 'received' };
+    const query: Record<string, unknown> = { userId, flow: 'onramp' };
     const statusStr = typeof status === 'string' ? status : undefined;
-    if (statusStr && ['pending', 'completed', 'failed'].includes(statusStr)) {
-      query.status = statusStr;
+    if (statusStr) {
+      // Map legacy filters to new lifecycle statuses
+      const mapped = statusStr === 'pending'
+        ? 'credit_pending'
+        : statusStr === 'completed'
+          ? 'credited'
+          : statusStr === 'failed'
+            ? 'credit_failed'
+            : undefined;
+      if (mapped) query.status = mapped;
     }
 
     const skip = (Number(page) - 1) * Number(limit);

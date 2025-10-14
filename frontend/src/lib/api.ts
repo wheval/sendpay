@@ -135,15 +135,21 @@ export const api = {
         body: JSON.stringify(data)
       })
   },
-  
-  // Starknet endpoints
-  starknet: {
-    withdraw: (data: Json, token?: string) =>
-      request('/starknet/withdraw', {
+
+  // Withdrawal endpoints (signature-first flow)
+  withdrawal: {
+    signature: (data: Json, token?: string) =>
+      request('/withdrawal/signature', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: JSON.stringify(data)
-      })
+      }),
+    execute: (data: Json, token?: string) =>
+      request('/withdrawal/execute', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: JSON.stringify(data)
+      }),
   }
 };
 

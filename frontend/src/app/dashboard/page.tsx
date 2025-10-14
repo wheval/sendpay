@@ -66,17 +66,13 @@ export default function DashboardPage() {
 
   const [showTransferModal, setShowTransferModal] = useState(false);
 
-  const [bankAccounts, setBankAccounts] = useState<
-    Array<{
-    _id: string;
-
+  const [bankAccounts, setBankAccounts] = useState<Array<{
+    id: string;
     bankName: string;
-
     accountNumber: string;
-
     accountName: string;
-    }>
-  >([]);
+    isDefault?: boolean;
+  }>>([]);
 
   const [pin, setPin] = useState("");
   const [profileLoaded, setProfileLoaded] = useState(false);
@@ -108,6 +104,15 @@ export default function DashboardPage() {
           setProfileLoaded(true);
           setBalance(freshUser.balanceUSD?.toString() || "0");
 
+          // Load bank accounts
+          try {
+            const bankAccountsRes = await api.user.bankAccounts(token);
+            if (bankAccountsRes.success) {
+              setBankAccounts(bankAccountsRes.bankAccounts);
+            }
+          } catch (error) {
+            console.error("Failed to load bank accounts:", error);
+          }
 
           setLoading(false);
 
@@ -829,7 +834,10 @@ export default function DashboardPage() {
         open={showWithdrawalModal} 
         onClose={() => setShowWithdrawalModal(false)}
         userId={userData.id}
+        usdcBalance={balance}
+        strkBalance={strkBalance}
         bankAccounts={bankAccounts}
+        exchangeRate={fxRate ?? undefined}
       />
       <FundCryptoModal
         open={showFundModal}

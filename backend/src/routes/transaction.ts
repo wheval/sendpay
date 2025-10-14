@@ -27,12 +27,25 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
     // Build query
     const query: any = { userId };
     
+    // Map legacy type filter to new flow
     if (type && ['received', 'withdrawn'].includes(type as string)) {
-      query.type = type;
+      query.flow = (type === 'received') ? 'onramp' : 'offramp';
     }
     
-    if (status && ['pending', 'completed', 'failed'].includes(status as string)) {
-      query.status = status;
+    // Map legacy status groups to new lifecycle statuses
+    if (status && typeof status === 'string') {
+      const s = status as string;
+      const legacyMap: Record<string, string[]> = {
+        pending: ['credit_pending', 'payout_pending', 'created', 'signed', 'submitted_onchain', 'event_emitted'],
+        completed: ['credited', 'payout_completed'],
+        failed: ['credit_failed', 'payout_failed']
+      };
+      if (legacyMap[s]) {
+        query.status = { $in: legacyMap[s] };
+      } else {
+        // allow querying by any of the new explicit statuses too
+        query.status = s;
+      }
     }
     
     if (startDate || endDate) {
@@ -76,7 +89,7 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
     };
 
     transactions.forEach(tx => {
-      if (tx.type === 'received') {
+      if (tx.flow === 'onramp') {
         summary.totalReceivedUSD += tx.amountUSD;
         summary.totalReceivedNGN += tx.amountNGN;
       } else {
@@ -84,9 +97,12 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
         summary.totalWithdrawnNGN += tx.amountNGN;
       }
 
-      if (tx.status === 'pending') summary.pendingTransactions++;
-      else if (tx.status === 'completed') summary.completedTransactions++;
-      else if (tx.status === 'failed') summary.failedTransactions++;
+      const isPending = ['credit_pending', 'payout_pending', 'created', 'signed', 'submitted_onchain', 'event_emitted'].includes(tx.status as any);
+      const isCompleted = ['credited', 'payout_completed'].includes(tx.status as any);
+      const isFailed = ['credit_failed', 'payout_failed'].includes(tx.status as any);
+      if (isPending) summary.pendingTransactions++;
+      else if (isCompleted) summary.completedTransactions++;
+      else if (isFailed) summary.failedTransactions++;
     });
 
     res.json({
@@ -115,7 +131,7 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
 
           return {
             id: tx._id,
-            type: tx.type,
+            flow: tx.flow,
             amountUSD: tx.amountUSD,
             amountNGN: tx.amountNGN,
             status: tx.status,
@@ -196,7 +212,7 @@ router.get('/details/:id', authenticateToken, async (req: Request, res: Response
       message: 'Transaction details retrieved successfully',
       data: {
         id: transaction._id,
-        type: transaction.type,
+        flow: transaction.flow,
         amountUSD: transaction.amountUSD,
         amountNGN: transaction.amountNGN,
         status: transaction.status,
@@ -271,7 +287,7 @@ router.get('/summary', authenticateToken, async (req: Request, res: Response) =>
     };
 
     transactions.forEach(tx => {
-      if (tx.type === 'received') {
+      if (tx.flow === 'onramp') {
         stats.totalReceivedUSD += tx.amountUSD;
         stats.totalReceivedNGN += tx.amountNGN;
       } else {
@@ -279,9 +295,12 @@ router.get('/summary', authenticateToken, async (req: Request, res: Response) =>
         stats.totalWithdrawnNGN += tx.amountNGN;
       }
 
-      if (tx.status === 'pending') stats.pendingCount++;
-      else if (tx.status === 'completed') stats.completedCount++;
-      else if (tx.status === 'failed') stats.failedCount++;
+      const isPending = ['credit_pending', 'payout_pending', 'created', 'signed', 'submitted_onchain', 'event_emitted'].includes(tx.status as any);
+      const isCompleted = ['credited', 'payout_completed'].includes(tx.status as any);
+      const isFailed = ['credit_failed', 'payout_failed'].includes(tx.status as any);
+      if (isPending) stats.pendingCount++;
+      else if (isCompleted) stats.completedCount++;
+      else if (isFailed) stats.failedCount++;
     });
 
     // Calculate averages
@@ -366,7 +385,7 @@ router.post('/details/:id/cancel', authenticateToken, async (req: Request, res: 
       });
     }
 
-    if (transaction.status !== 'pending') {
+    if (transaction.status !== 'credit_pending') {
       return res.status(400).json({
         success: false,
         message: 'Only pending transactions can be cancelled'
@@ -374,7 +393,7 @@ router.post('/details/:id/cancel', authenticateToken, async (req: Request, res: 
     }
 
     // Update transaction status
-    transaction.status = 'failed';
+    transaction.status = 'credit_failed';
     await transaction.save();
 
     res.json({

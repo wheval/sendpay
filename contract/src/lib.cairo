@@ -1193,6 +1193,8 @@ pub mod sendpay {
 }
 // TODO: Future Extensions
 
+// ADD Events for almost all functions
+
 // Add DepositRefund flow.
 
 // Add StablecoinSwap functionality (auto-USDC conversion).

@@ -7,6 +7,8 @@ import { User } from '../models/User';
 import { Transaction } from '../models/Transaction';
 import { BankAccount } from '../models/BankAccount';
 import { generateReference } from '../utils/helpers';
+import { getTokenConfig } from '../lib/constants';
+import { exchangeRateService } from '../services/exchange-rate.service';
 
 const router = Router();
 
@@ -17,7 +19,8 @@ const router = Router();
  */
 router.post('/signature', authenticateToken, async (req: Request, res: Response) => {
   try {
-    const { amount, tokenAddress, bankAccountId } = req.body;
+    const { amount, tokenAddress, bankAccountId, token } = req.body;
+    console.log('[withdrawal.signature] payload', { amount, tokenAddress, bankAccountId, token });
     const userId = req.user._id;
 
     // Validate required fields
@@ -37,6 +40,7 @@ router.post('/signature', authenticateToken, async (req: Request, res: Response)
 
     // Get user's wallet address
     const userWalletAddress = req.user.chipiWalletAddress;
+    console.log('[withdrawal.signature] user', { userId, userWalletAddress });
     if (!userWalletAddress) {
       return res.status(400).json({
         success: false,
@@ -57,9 +61,23 @@ router.post('/signature', authenticateToken, async (req: Request, res: Response)
       });
     }
 
-    // Check user balance
-    const balanceResult = await starknetService.getTokenBalance(userWalletAddress, tokenAddress);
+    // Check user balance (respect correct decimals for token)
+    const decimals = (() => {
+      try {
+        if (token === 'USDC') return '6';
+        if (token === 'STRK') return '18';
+        // Fallback: derive from constants if address matches
+        const usdcCfg = getTokenConfig('USDC');
+        const strkCfg = getTokenConfig('STRK');
+        const addr = String(tokenAddress || '').toLowerCase();
+        if (addr === usdcCfg.address.toLowerCase()) return String(usdcCfg.decimals);
+        if (addr === strkCfg.address.toLowerCase()) return String(strkCfg.decimals);
+      } catch {}
+      return '18';
+    })();
+    const balanceResult = await starknetService.getTokenBalance(userWalletAddress, tokenAddress, decimals);
     const currentBalance = Number(balanceResult || 0);
+    console.log('[withdrawal.signature] balance check', { decimals, balanceResult, currentBalance, requestedAmount: amount });
 
     if (currentBalance < amount) {
       return res.status(400).json({
@@ -68,10 +86,13 @@ router.post('/signature', authenticateToken, async (req: Request, res: Response)
       });
     }
 
-    // Create withdrawal signature
+    // Create withdrawal signature (amount must be in smallest units - u256)
+    const decimalsNum = parseInt(decimals, 10) || 18;
+    const amountUint = Math.round(Number(amount) * Math.pow(10, decimalsNum)).toString();
+    console.log('[withdrawal.signature] amount uint conversion', { decimalsNum, amount, amountUint });
     const withdrawalData = await starknetService.createWithdrawalSignature(
       userWalletAddress,
-      amount,
+      amountUint,
       tokenAddress,
       {
         accountNumber: bankAccount.accountNumber,
@@ -80,14 +101,21 @@ router.post('/signature', authenticateToken, async (req: Request, res: Response)
       }
     );
 
+    // FX rate snapshot (optional; used for display/audit)
+    let fxRateUsed: number = 0;
+    try {
+      const fx = await exchangeRateService.getExchangeRateInfo();
+      fxRateUsed = Number(fx?.rate) || 0; // same source used by frontend summary
+    } catch {}
+
     // Create transaction record
     const transaction = new Transaction({
       userId,
-      type: 'withdrawal_signature',
+      flow: 'offramp',
+      status: 'signed',
       amountUSD: parseFloat(amount),
       amountNGN: 0, // Will be calculated when processing
-      status: 'pending' as any, // Using pending for now, will be updated
-      description: `Withdrawal signature created for ${amount} tokens`,
+      description: `Withdrawal created for ${amount} tokens`,
       reference: generateReference(),
       starknetTxHash: null, // Will be set when executed
       metadata: {
@@ -97,7 +125,12 @@ router.post('/signature', authenticateToken, async (req: Request, res: Response)
         signature: withdrawalData.signature,
         nonce: withdrawalData.nonce,
         txRef: withdrawalData.request.tx_ref,
-        signatureStatus: 'signature_created'
+        signatureStatus: 'signature_created',
+        tokenSymbol: token,
+        userWalletAddress,
+        decimals: String(decimalsNum),
+        amountUint,
+        fxRateUsed
       }
     });
 
@@ -111,6 +144,8 @@ router.post('/signature', authenticateToken, async (req: Request, res: Response)
         request: withdrawalData.request,
         signature: withdrawalData.signature,
         nonce: withdrawalData.nonce,
+        amountUint,
+        decimals: String(decimalsNum),
         bankAccount: {
           accountNumber: bankAccount.accountNumber,
           bankName: bankAccount.bankName,
@@ -118,6 +153,8 @@ router.post('/signature', authenticateToken, async (req: Request, res: Response)
         },
         amount,
         tokenAddress,
+        tokenSymbol: token,
+        fxRateUsed,
         instructions: {
           step1: 'Call withdraw_with_signature on the contract with the provided request and signature',
           step2: 'Wait for WithdrawalCreated event',
@@ -131,7 +168,7 @@ router.post('/signature', authenticateToken, async (req: Request, res: Response)
     res.status(500).json({
       success: false,
       message: 'Failed to create withdrawal signature',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: process.env.NODE_ENV !== 'production' ? (error?.message || String(error)) : 'Internal server error'
     });
   }
 });
@@ -158,7 +195,7 @@ router.post('/execute', authenticateToken, async (req: Request, res: Response) =
     const transaction = await Transaction.findOne({
       _id: transactionId,
       userId: userId,
-      type: 'withdrawal_signature'
+      flow: 'offramp'
     });
 
     if (!transaction) {
@@ -180,6 +217,7 @@ router.post('/execute', authenticateToken, async (req: Request, res: Response) =
       ...transaction.metadata,
       signatureStatus: 'contract_executed'
     };
+    transaction.status = 'submitted_onchain';
     transaction.starknetTxHash = 'pending'; // Will be updated when we get the actual hash
     await transaction.save();
 
@@ -263,7 +301,7 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
 
     const transactions = await Transaction.find({
       userId: userId,
-      type: { $in: ['withdrawal_signature', 'withdrawal'] }
+      flow: 'offramp'
     })
     .sort({ createdAt: -1 })
     .limit(parseInt(limit as string) * 1)
@@ -272,7 +310,7 @@ router.get('/history', authenticateToken, async (req: Request, res: Response) =>
 
     const total = await Transaction.countDocuments({
       userId: userId,
-      type: { $in: ['withdrawal_signature', 'withdrawal'] }
+      flow: 'offramp'
     });
 
     res.json({
