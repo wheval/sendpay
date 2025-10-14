@@ -8,7 +8,7 @@
 		"build:api": "tsc -p tsconfig.json",
 		"build:indexer": "apibara build --dir .",
 		"monitor:indexer": "node scripts/uptime-monitor.js",
-		"start:indexer:server": "dotenv -e .env -- node dist/server.js",
+		"start:indexer:server": "node dist/server.js",
 		"start:indexer:server:sepolia": "dotenv -e .env.sepolia -- node dist/server.js",
 		"start:indexer:server:mainnet": "dotenv -e .env.mainnet -- node dist/server.js",
 		"dev:api": "dotenv -e .env -- nodemon src/index.ts",
