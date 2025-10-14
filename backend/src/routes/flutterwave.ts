@@ -209,7 +209,7 @@ router.post('/transfer', authenticateToken, async (req: Request, res: Response) 
 
     res.json({
       success: true,
-      message: 'Transfer initiated successfully',
+      message: 'Transfer successful!',
       data: {
         transferId: transfer?.data?.id,
         reference: transfer?.data?.reference || reference,

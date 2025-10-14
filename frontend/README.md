@@ -4,10 +4,11 @@ This is the frontend application for SendPay, built with Next.js, React, and sha
 
 ## Features
 
-- **Authentication**: Login and onboarding with Cavos SDK integration
+- **Authentication**: Login and onboarding with ChipiPay SDK integration
 - **Dashboard**: User balance, wallet information, and quick actions
 - **Receive Payments**: Create payment requests with QR codes and shareable links
 - **Withdraw Funds**: Withdraw to bank accounts with real-time balance checking
+- **Crypto Transfers**: Send STRK/USDC with PIN authentication
 - **Transaction History**: View and filter all transactions with search capabilities
 - **Dark Mode**: Full dark/light theme support
 - **Responsive Design**: Mobile-first design with responsive navigation

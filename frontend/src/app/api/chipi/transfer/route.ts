@@ -8,14 +8,6 @@ export async function POST(req: NextRequest) {
   try {
     const { pin, wallet, recipient, amount, token } = await req.json();
 
-    console.log("Transfer API received:", { 
-      pin: pin ? "***" : null, 
-      wallet: wallet ? "present" : null, 
-      recipient, 
-      amount, 
-      token 
-    });
-
     if (!pin || !wallet || !recipient || !amount || !token) {
       return NextResponse.json({ 
         success: false, 

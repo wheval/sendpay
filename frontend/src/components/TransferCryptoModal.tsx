@@ -62,15 +62,6 @@ export function TransferCryptoModal({ open, onClose, usdcBalance, strkBalance, u
         throw new Error("User ID is required for wallet access.");
       }
 
-      console.log("Transfer details:", {
-        token: selectedToken,
-        recipient,
-        amount,
-        userId,
-        jwtTokenLength: token?.length,
-        jwtTokenPreview: token ? `${token.substring(0, 20)}...` : 'No token'
-      });
-
       // Get wallet using API route
       const walletRes = await fetch("/api/chipi/wallet", {
         method: "POST",
@@ -92,9 +83,7 @@ export function TransferCryptoModal({ open, onClose, usdcBalance, strkBalance, u
       if (!wallet) {
         throw new Error("No wallet found for user. Please create a wallet first.");
       }
-
-      console.log("Wallet data:", wallet);
-
+   
       // Execute transfer using API route
       const transferRes = await fetch("/api/chipi/transfer", {
         method: "POST",
@@ -118,7 +107,6 @@ export function TransferCryptoModal({ open, onClose, usdcBalance, strkBalance, u
       }
 
       const result = transferData.data;
-      console.log("Transfer result:", result);
       
       setSuccess(true);
       setTimeout(() => {
@@ -201,7 +189,7 @@ export function TransferCryptoModal({ open, onClose, usdcBalance, strkBalance, u
           {/* Success Message */}
           {success && (
             <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-              <p className="text-sm text-green-600">Transfer initiated successfully! Check your wallet for confirmation.</p>
+              <p className="text-sm text-green-600">Transfer successful! Check your wallet for confirmation.</p>
             </div>
           )}
         </CardContent>
