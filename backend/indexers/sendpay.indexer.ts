@@ -8,6 +8,7 @@ import { ProcessedEvent } from "../src/models/ProcessedEvent";
 import { Transaction } from "../src/models/Transaction";
 import { BankAccount } from "../src/models/BankAccount";
 import { flutterwaveService } from "../src/services/flutterwave.service";
+import axios from "axios";
 import { exchangeRateService } from "../src/services/exchange-rate.service";
 
 // Event selectors from SendPay ABI (using the correct event names from deployed contract)
@@ -62,6 +63,103 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
       console.error("[sendpay.indexer] MongoDB connection error:", err);
     });
   }
+
+  // Optional startup reconciliation to (re)attempt stuck payouts
+  async function reconcilePendingWithdrawals() {
+    const enabled = String(process.env.RECONCILE_ON_START || "false").toLowerCase() === "true";
+    if (!enabled) {
+      console.log("[sendpay.indexer] Startup reconciliation disabled. Set RECONCILE_ON_START=true to enable.");
+      return;
+    }
+
+    try {
+      console.log("[sendpay.indexer] Running startup reconciliation for pending/stuck withdrawals...");
+      const candidates = await Transaction.find({
+        flow: "offramp",
+        status: { $in: ["submitted_onchain", "payout_pending", "payout_failed"] },
+        "metadata.withdrawalId": { $exists: true },
+      }).sort({ createdAt: -1 }).limit(50);
+
+      console.log(`[sendpay.indexer] Found ${candidates.length} candidates to reconcile`);
+
+      for (const tx of candidates) {
+        try {
+          const withdrawalId = (tx as any)?.metadata?.withdrawalId;
+          const bankAccountId = (tx as any)?.metadata?.bankAccountId;
+          if (!withdrawalId || !bankAccountId) {
+            console.warn("[sendpay.indexer] Skipping tx with missing withdrawalId/bankAccountId", String((tx as any)._id));
+            continue;
+          }
+
+          const bank = await BankAccount.findById(bankAccountId);
+          if (!bank) {
+            console.warn("[sendpay.indexer] Skipping tx; bank account not found", bankAccountId);
+            continue;
+          }
+
+          // Convert amount from stored USD using locked rate if present
+          const usdAmount = Number((tx as any)?.amountUSD || 0);
+          const lockedRate = (tx as any)?.metadata?.lockedExchangeRate;
+          const ngnAmount = typeof lockedRate === "number" && lockedRate > 0
+            ? Math.round(usdAmount * lockedRate)
+            : await exchangeRateService.convertUSDToNGN(usdAmount);
+
+          if (!Number.isFinite(ngnAmount) || ngnAmount < 100) {
+            console.warn(`[sendpay.indexer] Skipping withdrawal ${withdrawalId} - NGN amount invalid or below minimum: ₦${ngnAmount}`);
+            continue;
+          }
+
+          // Generate deterministic idempotent reference per attempt
+          const reference = `sendpay${withdrawalId}${Date.now()}`.replace(/[^a-zA-Z0-9]/g, "");
+
+          console.log(`[sendpay.indexer] Re-initiating payout`, {
+            withdrawalId,
+            bank: `${bank.bankName} (${bank.bankCode})`,
+            account: bank.accountNumber,
+            ngnAmount,
+            reference,
+          });
+
+          const transfer = await flutterwaveService.createDirectTransfer({
+            bankCode: bank.bankCode,
+            accountNumber: bank.accountNumber,
+            amountNGN: ngnAmount,
+            reference,
+            narration: `SendPay withdrawal ${withdrawalId}`,
+            callback_url: process.env.FLUTTERWAVE_CALLBACK_URL || undefined,
+            idempotencyKey: reference,
+          });
+
+          await Transaction.findByIdAndUpdate(tx._id, {
+            $set: {
+              status: "payout_pending",
+              metadata: {
+                ...(tx as any).metadata,
+                flutterwave_reference: transfer?.data?.reference || reference,
+                flutterwave_transfer_id: transfer?.data?.id || null,
+                ngnAmount,
+                usdAmount,
+                payoutInitiatedAt: new Date(),
+                reconciledAtStartup: true,
+              },
+            },
+          });
+
+          console.log(`[sendpay.indexer] Startup payout re-init success for withdrawal ${withdrawalId}`);
+        } catch (err: any) {
+          console.error("[sendpay.indexer] Startup payout re-init failed", {
+            error: err?.response?.data || err?.message || String(err),
+          });
+          // Soft-fail; do not throw to keep iterating other candidates
+        }
+      }
+    } catch (e) {
+      console.error("[sendpay.indexer] Reconciliation fatal error:", e);
+    }
+  }
+
+  // Fire and forget; controlled via env flag
+  void reconcilePendingWithdrawals();
 
   return defineIndexer(StarknetStream)({
     streamUrl,
@@ -387,6 +485,12 @@ export default function (runtimeConfig: ApibaraRuntimeConfig) {
 
               // Create alphanumeric reference for Flutterwave V4
               const alphanumericRef = `sendpay${withdrawalId}${Date.now()}`.replace(/[^a-zA-Z0-9]/g, '');
+
+              // Log outbound IP from indexer host just before payout
+              try {
+                const ip = await axios.get("https://api.ipify.org", { timeout: 4000 }).then(r => r.data).catch(() => undefined);
+                if (ip) useLogger().info("[sendpay.indexer] Outbound Source IP (indexer):", { ip, withdrawalId });
+              } catch {}
 
               const transfer =
                 await flutterwaveService.createDirectTransfer({
