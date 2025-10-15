@@ -45,19 +45,29 @@ export function WithdrawalModal({
   exchangeRate: exchangeRateProp,
 }: WithdrawalModalProps) {
   const [amount, setAmount] = useState("");
-  const [selectedToken, setSelectedToken] = useState<"USDC" | "STRK">("USDC");
+  const [selectedToken] = useState<"USDC" | "STRK">("USDC");
   const [selectedBank, setSelectedBank] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState<
     "input" | "approving" | "withdrawing" | "completed"
   >("input");
-  const [transactionId, setTransactionId] = useState<string | null>(null);
+  // no local transactionId state needed
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number>(exchangeRateProp ?? DEFAULT_USD_NGN_FALLBACK); // Default NGN rate
   const [strkUsd, setStrkUsd] = useState<number>(0); // STRK -> USD price
   const [lockedRate, setLockedRate] = useState<number | null>(null); // Locked rate when withdrawal starts
+  const [receipt, setReceipt] = useState<null | {
+    usdAmount: number;
+    ngnAmount: number;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+    txHash: string;
+    txRef: string;
+    timestamp: string;
+  }>(null);
 
   // Pre-select default bank account when modal opens
   React.useEffect(() => {
@@ -108,7 +118,7 @@ export function WithdrawalModal({
         setError("");
       }
     }
-  }, [amount, error, exchangeRate, lockedRate]);
+  }, [amount, error, exchangeRate, lockedRate, selectedToken, strkUsd]);
 
   if (!open) return null;
 
@@ -189,7 +199,6 @@ export function WithdrawalModal({
         signature,
         transactionId: txId,
       } = signatureResponse.data;
-      setTransactionId(txId);
 
       // Step 2: Prepare multicall for approval + withdrawal
       setStep("approving");
@@ -299,6 +308,20 @@ export function WithdrawalModal({
       if (transactionHash) {
         setStep("completed");
         setSuccess(true);
+        const bank = bankAccounts.find((b) => b.id === selectedBank);
+        const usdAmount = parseFloat(amount || '0');
+        const currentRate = lockedRate || exchangeRate;
+        const ngnAmount = Math.round(usdAmount * 1 * currentRate);
+        setReceipt({
+          usdAmount,
+          ngnAmount,
+          bankName: bank?.bankName || "",
+          accountNumber: bank?.accountNumber || "",
+          accountName: bank?.accountName || "",
+          txHash: transactionHash,
+          txRef: request?.tx_ref || "",
+          timestamp: new Date().toISOString(),
+        });
         
         // Update backend with execution status
         await api.withdrawal.execute(
@@ -309,12 +332,6 @@ export function WithdrawalModal({
           },
           token || undefined
         );
-
-        setTimeout(() => {
-          onClose();
-          setSuccess(false);
-          setStep("input");
-        }, 2000);
       }
     } catch (err: unknown) {
       console.error("Withdrawal error:", err);
@@ -326,20 +343,7 @@ export function WithdrawalModal({
     }
   };
 
-  const getStepMessage = () => {
-    switch (step) {
-      case "input":
-        return "Enter withdrawal details";
-      case "approving":
-        return "Approving token transfer...";
-      case "withdrawing":
-        return "Processing withdrawal...";
-      case "completed":
-        return "Withdrawal completed successfully!";
-      default:
-        return "";
-    }
-  };
+  // removed unused getStepMessage
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -360,16 +364,51 @@ export function WithdrawalModal({
           )} */}
 
           {step === "completed" ? (
-            <div className="text-center space-y-4">
-              <div className="text-green-600 text-lg">
-                ✅ Withdrawal Successful!
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Your withdrawal has been processed. Funds will arrive in 30s.
-              </p>
-              <Button onClick={onClose} className="w-full">
-                Close
-              </Button>
+            <div className="space-y-4">
+              <div className="text-green-700 text-lg font-medium">Withdrawal Successful</div>
+              {receipt && (
+                <div className="text-sm space-y-2">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="font-medium">Receipt</div>
+                    <div className="mt-2 grid grid-cols-1 gap-2">
+                      <div>
+                        <span className="text-muted-foreground">Payment:</span>{" "}
+                        {receipt.usdAmount.toFixed(2)} USDC → ₦{receipt.ngnAmount.toLocaleString('en-NG')}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Bank:</span>{" "}
+                        {receipt.bankName} • {receipt.accountNumber} • {receipt.accountName}
+                      </div>
+                      <div className="break-all">
+                        <span className="text-muted-foreground">On-chain Tx Hash:</span>{" "}
+                        {receipt.txHash}
+                      </div>
+                      <div className="break-all">
+                        <span className="text-muted-foreground">TxRef:</span>{" "}
+                        {receipt.txRef}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Time:</span>{" "}
+                        {new Date(receipt.timestamp).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(
+                          `Withdrawal Receipt:\nPayment: ${receipt.usdAmount.toFixed(2)} USDC → ₦${receipt.ngnAmount.toLocaleString('en-NG')}\nBank: ${receipt.bankName} • ${receipt.accountNumber} • ${receipt.accountName}\nTx Hash: ${receipt.txHash}\nTxRef: ${receipt.txRef}\nTime: ${new Date(receipt.timestamp).toLocaleString()}`
+                        );
+                      }}
+                    >
+                      Copy Receipt
+                    </Button>
+                    <Button className="w-full" onClick={onClose}>Close</Button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <>

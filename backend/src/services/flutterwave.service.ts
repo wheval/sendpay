@@ -123,6 +123,15 @@ export class FlutterwaveService {
       throw new Error('Flutterwave credentials not configured. Please set FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET');
     }
 
+    // Diagnostic: detect current public IP to confirm whitelisting source
+    try {
+      const ipRes = await axios.get('https://api.ipify.org', { timeout: 4000 });
+      const sourceIP = ipRes?.data;
+      console.log('[fw] Source IP for direct transfer call:', { sourceIP, reference: params.reference });
+    } catch (e: any) {
+      console.warn('[fw] Could not determine source IP before transfer:', e?.message || String(e));
+    }
+
     const payload: any = {
       action: 'instant',
       type: 'bank',

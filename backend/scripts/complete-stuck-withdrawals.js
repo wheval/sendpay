@@ -83,6 +83,14 @@ async function getFlutterwaveAccessToken() {
 
 async function createFlutterwaveTransfer(params) {
   const accessToken = await getFlutterwaveAccessToken();
+
+  // Diagnostic: log the public IP this script is using for outbound calls
+  try {
+    const ipRes = await axios.get('https://api.ipify.org', { timeout: 4000 });
+    console.log('🌐 Outbound Source IP (script):', ipRes?.data);
+  } catch (e) {
+    console.log('🌐 Outbound Source IP (script): unavailable');
+  }
   
   const payload = {
     action: 'instant',
