@@ -133,6 +133,16 @@ export const api = {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: JSON.stringify(data)
+      }),
+    onrampInitiate: (data: Json, token?: string) =>
+      request('/flutterwave/onramp/initiate', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: JSON.stringify(data)
+      }),
+    virtualAccountStatus: (id: string, page?: number, token?: string) =>
+      request(`/flutterwave/virtual-account/${encodeURIComponent(id)}/status${page ? `?page=${page}` : ''}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       })
   },
 
