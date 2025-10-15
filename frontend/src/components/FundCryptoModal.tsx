@@ -11,6 +11,12 @@ import QRCode from "react-qr-code";
 import { api } from "@/lib/api";
 import { cookies } from "@/lib/cookies";
 import {
+  generateSimulatedPwbtData,
+  addSimulatedBalance,
+  setSimulationActive,
+  isSimulationActive
+} from "@/lib/pwbt-simulation";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -22,9 +28,10 @@ interface FundCryptoModalProps {
   open: boolean;
   onClose: () => void;
   walletAddress: string;
+  onBalanceUpdate?: () => void;
 }
 
-export function FundCryptoModal({ open, onClose, walletAddress }: FundCryptoModalProps) {
+export function FundCryptoModal({ open, onClose, walletAddress, onBalanceUpdate }: FundCryptoModalProps) {
   const [copied, setCopied] = useState(false);
   const [selectedToken, setSelectedToken] = useState<"USDC" | "STRK">("USDC");
   const [tokenAmount, setTokenAmount] = useState<string>("");
@@ -46,6 +53,16 @@ export function FundCryptoModal({ open, onClose, walletAddress }: FundCryptoModa
       narration?: string;
     }
   }>(null);
+  const [countdown, setCountdown] = useState<number>(0);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [simulationMode] = useState(() => {
+    // Enable simulation mode (set to false to use real Flutterwave)
+    const useSimulation = true;
+    if (useSimulation) {
+      setSimulationActive(true);
+    }
+    return useSimulation;
+  });
   // Hooks must not be conditional; keep rendering minimal UI when closed
 
   const normalized = normalizeHex(walletAddress || "");
@@ -75,6 +92,25 @@ export function FundCryptoModal({ open, onClose, walletAddress }: FundCryptoModa
     })();
   }, [open]);
 
+  // Countdown timer effect
+  React.useEffect(() => {
+    if (countdown <= 0) return;
+    
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          // Timer expired, reset state
+          setPwbt(null);
+          setPaymentConfirmed(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [countdown]);
+
   const computeNairaEquivalent = (): number => {
     const amt = parseFloat(tokenAmount || '0');
     const usdPerToken = selectedToken === 'USDC' ? 1 : (strkUsd || 0);
@@ -92,13 +128,29 @@ export function FundCryptoModal({ open, onClose, walletAddress }: FundCryptoModa
     const usdPerToken = selectedToken === 'USDC' ? 1 : (strkUsd || 0);
     const amountUSD = +(amt * usdPerToken).toFixed(6);
     setIsLoading(true);
+    
     try {
-      const token = cookies.get("jwt") || undefined;
-      const res = await api.flutterwave.onrampInitiate({ amountUSD }, token);
-      if (res?.success) {
-        setPwbt(res.data);
+      if (simulationMode) {
+        // SIMULATION MODE: Generate fake bank details
+        const simulatedData = generateSimulatedPwbtData(amountUSD);
+        setPwbt(simulatedData);
+        
+        // Start countdown (15 minutes = 900 seconds)
+        setCountdown(900);
       } else {
-        setError(res?.message || "Failed to initiate PWBT");
+        // REAL MODE: Use Flutterwave API
+        const token = cookies.get("jwt") || undefined;
+        const res = await api.flutterwave.onrampInitiate({ amountUSD }, token);
+        if (res?.success) {
+          setPwbt(res.data);
+          // Start countdown based on expiry time
+          const expiryTime = new Date(res.data.virtualAccount.expiry).getTime();
+          const now = Date.now();
+          const remainingSeconds = Math.max(0, Math.floor((expiryTime - now) / 1000));
+          setCountdown(remainingSeconds);
+        } else {
+          setError(res?.message || "Failed to initiate PWBT");
+        }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -110,18 +162,27 @@ export function FundCryptoModal({ open, onClose, walletAddress }: FundCryptoModa
 
   if (!open) return null;
 
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <Card className="max-w-lg lg:max-w-3xl w-full">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={handleBackdropClick}
+    >
+      <Card className="max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
         <CardHeader>
           <CardTitle className="flex justify-between items-center">
             Fund Crypto
             <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4 lg:flex lg:gap-x-8 lg:items-center">
-          {/* Mobile view switcher */}
-          <div className="flex gap-2 lg:hidden">
+        <CardContent className="space-y-4">
+          {/* Tab switcher - always visible */}
+          <div className="flex gap-2">
             <Button
               variant={view === 'wallet' ? 'default' : 'outline'}
               className="w-1/2 text-sm"
@@ -138,7 +199,7 @@ export function FundCryptoModal({ open, onClose, walletAddress }: FundCryptoModa
             </Button>
           </div>
 
-          <div className={`space-y-4 lg:w-1/2 ${view === 'naira' ? 'hidden' : 'block'} lg:block`}>
+          <div className={`space-y-4 ${view === 'naira' ? 'hidden' : 'block'}`}>
             <p className="lg:text-lg leading-tight font-bold text-muted-foreground">Send USDC/STRK to your wallet address on Starknet.</p>
             
             {/* QR Code */}
@@ -176,8 +237,7 @@ export function FundCryptoModal({ open, onClose, walletAddress }: FundCryptoModa
             </div>
           </div>
           
-          <p className="text-center lg:mr-2 hidden lg:block"> OR</p>
-          <div className={`space-y-3 lg:w-1/2 lg:space-y-4 ${view === 'wallet' ? 'hidden' : 'block'} lg:block`}>
+          <div className={`space-y-3 ${view === 'wallet' ? 'hidden' : 'block'}`}>
             <p className="text-lg font-bold text-muted-foreground">Buy with Naira</p>
             {!pwbt ? (
               <>
@@ -211,30 +271,90 @@ export function FundCryptoModal({ open, onClose, walletAddress }: FundCryptoModa
                   {isLoading ? 'Creating account...' : 'Generate Bank Details'}
                 </Button>
               </>
+            ) : paymentConfirmed ? (
+              <div className="space-y-3 text-center">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center justify-center">
+                      <div className="w-[120px] h-[120px] mb-4 bg-green-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-[96px]">✓</span>
+                      </div>
+                    </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="font-bold text-lg w-full text-green-800">Payment Successful!</div>
+                  </div>
+                  <div className="text-sm text-green-700 space-y-1">
+                    <div>Your payment of <strong>₦{pwbt.virtualAccount.amount.toLocaleString('en-NG')}</strong> has been received.</div>
+                    <div>You received <strong>{tokenAmount} {selectedToken}</strong> in your wallet.</div>
+                    <div>Transaction ID: <strong>{pwbt.fiat_tx_ref}</strong></div>
+                  </div>
+                </div>
+                <Button className="w-full" onClick={() => {
+                  setPaymentConfirmed(false);
+                  setPwbt(null);
+                  setTokenAmount('');
+                  onClose();
+                }}>
+                  Done
+                </Button>
+              </div>
             ) : (
               <div className="space-y-3">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div className="font-medium">Virtual Account Details</div>
-                  <div className="mt-2 grid gap-1 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Bank:</span> {pwbt.virtualAccount.bankName}
+                <div className="bg-blue-50 dark:bg-transparent border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                  <div className="font-medium">Account Details</div>
+                  <div className="mt-2 grid gap-y-1.5 gap-x-0 text-sm">
+                    <div className="font-bold">
+                      <span className="text-muted-foreground font-normal inline-block w-[125px]">Bank:</span>{pwbt.virtualAccount.bankName}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Account Number:</span>
-                      <Input readOnly value={pwbt.virtualAccount.accountNumber} className="font-mono text-sm" />
+                     <div className="flex items-center">
+                       <span className="text-muted-foreground inline-block w-[125px]">Account Number:</span>
+                       <span className="font-bold">{pwbt.virtualAccount.accountNumber}</span>
+                     </div>
+                     <div className="flex items-center">
+                       <span className="text-muted-foreground inline-block w-[125px]">Account Name:</span>
+                       <span className="font-bold">SENDPAY HQ</span>
+                     </div>
+                    <div>
+                      <span className="text-muted-foreground inline-block w-[125px]">Amount to Pay:</span> <span className="font-bold">₦{pwbt.virtualAccount.amount.toLocaleString('en-NG')}</span>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Amount to Pay:</span> ₦{pwbt.virtualAccount.amount.toLocaleString('en-NG')} {pwbt.virtualAccount.currency}
+                      <span className="text-muted-foreground inline-block w-[125px]">Reference:</span><span className="font-bold">{pwbt.fiat_tx_ref}</span>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Reference:</span> {pwbt.fiat_tx_ref}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Expires:</span> {new Date(pwbt.virtualAccount.expiry).toLocaleString()}
+                    <div className="flex items-center ">
+                      <span className="text-muted-foreground inline-block w-[125px]">Expires in:</span>
+                      <span className={`font-mono ${countdown < 300 ? 'text-red-600' : 'text-green-600'}`}>
+                        {Math.floor(countdown / 60)}:{(countdown % 60).toString().padStart(2, '0')}
+                      </span>
                     </div>
                   </div>
                 </div>
-                <Button className="w-full" onClick={onClose}>Done</Button>
+                <Button 
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    // Simulate payment confirmation
+                    setPaymentConfirmed(true);
+                    
+                    // Add simulated balance
+                    const amount = parseFloat(tokenAmount || '0');
+                    addSimulatedBalance(selectedToken, amount);
+                    
+                    // Clear countdown
+                    setCountdown(0);
+                    
+                    // Notify parent component to refresh balance
+                    if (onBalanceUpdate) {
+                      onBalanceUpdate();
+                    }
+                  }}
+                >
+                  I&apos;ve Sent It
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => {
+                  setPwbt(null);
+                  setCountdown(0);
+                  setPaymentConfirmed(false);
+                }}>
+                  Cancel
+                </Button>
               </div>
             )}
           </div>

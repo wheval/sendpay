@@ -345,9 +345,18 @@ export function WithdrawalModal({
 
   // removed unused getStepMessage
 
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <Card className="max-w-md w-full">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={handleBackdropClick}
+    >
+      <Card className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
         <CardHeader>
           <CardTitle className="flex justify-between items-center">
             Withdraw Funds
@@ -365,33 +374,34 @@ export function WithdrawalModal({
 
           {step === "completed" ? (
             <div className="space-y-4">
-              <div className="text-green-700 text-lg font-medium">Withdrawal Successful</div>
               {receipt && (
                 <div className="text-sm space-y-2">
                   <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                    <div className="font-medium">Receipt</div>
-                    <div className="mt-2 grid grid-cols-1 gap-2">
-                      <div>
-                        <span className="text-muted-foreground">Payment:</span>{" "}
+                  <div className="text-lg font-bold">Withdrawal Successful</div>
+                  <div className="font-medium mb-4">Here&apos;s your withdrawal receipt</div>
+                    <div className="mt-2 grid grid-cols-1 gap-y-1.5">
+                      <div className="font-bold">
+                        <span className="text-muted-foreground font-normal">Payment:</span>{" "}
                         {receipt.usdAmount.toFixed(2)} USDC → ₦{receipt.ngnAmount.toLocaleString('en-NG')}
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Bank:</span>{" "}
+                      <div className="font-bold">
+                        <span className="text-muted-foreground font-normal mr-4">Bank:</span>{" "}
                         {receipt.bankName} • {receipt.accountNumber} • {receipt.accountName}
                       </div>
-                      <div className="break-all">
-                        <span className="text-muted-foreground">On-chain Tx Hash:</span>{" "}
+                      <div className="break-all font-bold">
+                        <span className="text-muted-foreground font-normal mr-1">Onchain Tx:</span>{" "}
                         {receipt.txHash}
                       </div>
-                      <div className="break-all">
-                        <span className="text-muted-foreground">TxRef:</span>{" "}
+                      <div className="break-all font-bold">
+                        <span className="text-muted-foreground font-normal mr-1">TxRef:</span>{" "}
                         {receipt.txRef}
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Time:</span>{" "}
+                      <div className="font-bold">
+                        <span className="text-muted-foreground font-normal mr-1">Time:</span>{" "}
                         {new Date(receipt.timestamp).toLocaleString()}
                       </div>
                     </div>
+                    <div className="font-medium text-center mt-4">Thank you for using SendPay!</div>
                   </div>
                   <div className="flex gap-2">
                     <Button

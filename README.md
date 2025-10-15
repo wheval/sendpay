@@ -492,8 +492,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Documentation**: [Project Wiki](link-to-wiki)
 - **Issues**: [GitHub Issues](link-to-issues)
-- **Discussions**: [GitHub Discussions](link-to-discussions)
-- **Email**: support@sendpay.com
+<!-- - **Discussions**: [GitHub Discussions](link-to-discussions) -->
+- **Email**: sendpayhq@gmail.com
 
 ## 🙏 Acknowledgments
 

@@ -184,9 +184,18 @@ export function CreatePinModal({ open, onClose, onSuccess }: CreatePinModalProps
     }
   };
 
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-background rounded-lg max-w-sm w-full">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={handleBackdropClick}
+    >
+      <div className="bg-background rounded-lg max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
         <div className="p-6 space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">

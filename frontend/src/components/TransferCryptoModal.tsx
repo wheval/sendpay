@@ -123,9 +123,18 @@ export function TransferCryptoModal({ open, onClose, usdcBalance, strkBalance, u
     }
   };
 
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <Card className="max-w-md w-full">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={handleBackdropClick}
+    >
+      <Card className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
         <CardHeader>
           <CardTitle className="flex justify-between items-center">
             Transfer Crypto

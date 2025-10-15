@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useCallback, useState } from "react";
 import Navigation from "@/components/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { CreatePinModal } from "@/components/CreatePinModal";
 import { WithdrawalModal } from "@/components/WithdrawalModal";
 import { FundCryptoModal } from "@/components/FundCryptoModal";
 import { TransferCryptoModal } from "@/components/TransferCryptoModal";
+import { applySimulatedBalance, clearSimulationData } from "@/lib/pwbt-simulation";
 // Using backend balance service for reliability
 
 interface UserData {
@@ -45,6 +46,50 @@ export default function DashboardPage() {
   const [balance, setBalance] = useState<string | null>(null); // USDT
 
   const [strkBalance, setStrkBalance] = useState<string | null>(null);
+
+  // Helper function to set balance with simulation
+  const setBalanceWithSimulation = (usdcBalance: string | null, strkBal: string | null) => {
+    const simulated = applySimulatedBalance(usdcBalance, strkBal);
+    setBalance(simulated.usdc);
+    setStrkBalance(simulated.strk);
+  };
+
+  // Function to refresh balance (called when simulation balance changes)
+  const refreshBalance = useCallback(async () => {
+    const activeWallet = userData?.chipiWalletAddress || "";
+    const normalizedWallet = activeWallet ? normalizeHex(activeWallet) : "";
+    if (!normalizedWallet) return;
+    const token = cookies.get("jwt");
+    if (!token) return;
+
+    const usdcCfg = getTokenConfig("USDC") as { address: string; decimals: string };
+
+    try {
+      const usdcRes = await api.chipipay.balance(
+        normalizedWallet,
+        usdcCfg.address,
+        token
+      );
+      const usdcFormatted = usdcRes?.data?.formatted;
+      const usdcBalance = usdcFormatted !== undefined && !isNaN(Number(usdcFormatted)) ? String(usdcFormatted) : "0";
+      
+      try {
+        const strkRes = await api.chipipay.balance(
+          normalizedWallet,
+          'STRK',
+          token
+        );
+        const strkFormatted = strkRes?.data?.formatted;
+        const strkBal = strkFormatted !== undefined && !isNaN(Number(strkFormatted)) ? String(strkFormatted) : "0";
+        
+        setBalanceWithSimulation(usdcBalance, strkBal);
+      } catch {
+        setBalanceWithSimulation(usdcBalance, "0");
+      }
+    } catch {
+      setBalanceWithSimulation("0", "0");
+    }
+  }, [userData?.chipiWalletAddress]);
 
   const [fxRate, setFxRate] = useState<number | null>(null); // USD->NGN
 
@@ -102,7 +147,7 @@ export default function DashboardPage() {
           setUserData(freshUser);
           localStorage.setItem("user", JSON.stringify(freshUser));
           setProfileLoaded(true);
-          setBalance(freshUser.balanceUSD?.toString() || "0");
+          setBalanceWithSimulation(freshUser.balanceUSD?.toString() || "0", "0");
 
           // Load bank accounts
           try {
@@ -202,20 +247,24 @@ export default function DashboardPage() {
           token
         );
         const usdcFormatted = usdcRes?.data?.formatted;
-        setBalance(usdcFormatted && !isNaN(Number(usdcFormatted)) ? String(usdcFormatted) : "0");
+        const usdcBalance = usdcFormatted && !isNaN(Number(usdcFormatted)) ? String(usdcFormatted) : "0";
+        let strkBalance = "0";
+        
+        try {
+          const strkRes = await api.chipipay.balance(
+            normalizedActiveWallet,
+            'STRK', // Use 'STRK' identifier for native token
+            token
+          );
+          const strkFormatted = strkRes?.data?.formatted;
+          strkBalance = strkFormatted && !isNaN(Number(strkFormatted)) ? String(strkFormatted) : "0";
+        } catch {
+          strkBalance = "0";
+        }
+        
+        setBalanceWithSimulation(usdcBalance, strkBalance);
       } catch {
-        setBalance("0");
-      }
-      try {
-        const strkRes = await api.chipipay.balance(
-          normalizedActiveWallet,
-          'STRK', // Use 'STRK' identifier for native token
-          token
-        );
-        const strkFormatted = strkRes?.data?.formatted;
-        setStrkBalance(strkFormatted && !isNaN(Number(strkFormatted)) ? String(strkFormatted) : "0");
-      } catch {
-        setStrkBalance("0");
+        setBalanceWithSimulation("0", "0");
       }
       
       // Clear loading state
@@ -237,22 +286,37 @@ export default function DashboardPage() {
           token
         );
         const usdcFormatted = usdcRes?.data?.formatted;
-        if (usdcFormatted !== undefined && !isNaN(Number(usdcFormatted))) {
-          setBalance(String(usdcFormatted));
+        const usdcBalance = usdcFormatted !== undefined && !isNaN(Number(usdcFormatted)) ? String(usdcFormatted) : "0";
+        
+        try {
+          const strkRes = await api.chipipay.balance(
+            normalizedActiveWallet,
+            'STRK', // Use 'STRK' identifier for native token
+            token
+          );
+          const strkFormatted = strkRes?.data?.formatted;
+          const strkBal = strkFormatted !== undefined && !isNaN(Number(strkFormatted)) ? String(strkFormatted) : "0";
+          
+          // Apply simulation to the fetched balances
+          setBalanceWithSimulation(usdcBalance, strkBal);
+        } catch {
+          setBalanceWithSimulation(usdcBalance, "0");
         }
-      } catch {}
-
-      try {
-        const strkRes = await api.chipipay.balance(
-          normalizedActiveWallet,
-          'STRK', // Use 'STRK' identifier for native token
-          token
-        );
-        const strkFormatted = strkRes?.data?.formatted;
-        if (strkFormatted !== undefined && !isNaN(Number(strkFormatted))) {
-          setStrkBalance(String(strkFormatted));
+      } catch {
+        // If USDC fetch fails, try to get STRK only
+        try {
+          const strkRes = await api.chipipay.balance(
+            normalizedActiveWallet,
+            'STRK',
+            token
+          );
+          const strkFormatted = strkRes?.data?.formatted;
+          const strkBal = strkFormatted !== undefined && !isNaN(Number(strkFormatted)) ? String(strkFormatted) : "0";
+          setBalanceWithSimulation("0", strkBal);
+        } catch {
+          // Both failed, keep current balances with simulation
         }
-      } catch {}
+      }
     }, 10000);
 
     return () => clearInterval(interval);
@@ -297,6 +361,9 @@ export default function DashboardPage() {
     setBalance(null);
 
     setStrkBalance(null);
+
+    // Clear simulation data on logout
+    clearSimulationData();
 
     setFxRate(null);
 
@@ -843,6 +910,7 @@ export default function DashboardPage() {
         open={showFundModal}
         onClose={() => setShowFundModal(false)}
         walletAddress={userData.chipiWalletAddress || ""}
+        onBalanceUpdate={refreshBalance}
       />
       <TransferCryptoModal
         open={showTransferModal}
